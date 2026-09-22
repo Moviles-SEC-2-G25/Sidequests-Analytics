@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from .db import get_engine
 from .queries import (
+    BQ3_ONBOARDING_DROPOFF_SQL,
     BQ6_ABANDONMENT_BASE_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     USER_FEATURES_SQL,
@@ -16,6 +17,10 @@ from .queries import (
 def _records(df: pd.DataFrame) -> list[dict]:
     clean = df.where(pd.notnull(df), None)
     return clean.to_dict(orient="records")
+
+
+def compute_bq3(engine) -> list[dict]:
+    return _records(pd.read_sql(text(BQ3_ONBOARDING_DROPOFF_SQL), engine))
 
 
 def compute_bq9(engine) -> list[dict]:
@@ -87,7 +92,7 @@ def run() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--job",
-        choices=("all", "bq6", "bq9", "features"),
+        choices=("all", "bq3", "bq6", "bq9", "features"),
         default="all",
     )
     args = parser.parse_args()
@@ -97,6 +102,11 @@ def run() -> None:
     if args.job in ("all", "features"):
         refreshed = refresh_user_features(engine)
         print(f"refreshed user_features: {refreshed}")
+
+    if args.job in ("all", "bq3"):
+        bq3 = compute_bq3(engine)
+        store_bq_result(engine, "BQ3", bq3)
+        print(f"stored BQ3 rows: {len(bq3)}")
 
     if args.job in ("all", "bq6"):
         bq6 = compute_bq6_base(engine)

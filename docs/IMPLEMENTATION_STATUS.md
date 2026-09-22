@@ -20,13 +20,23 @@
 - Python batch pipeline execution against the hosted Supabase database.
 - Streamlit dashboard hosting.
 - Refresh of `analytics.user_features` by the Python pipeline.
+- BQ3 query: session-level onboarding funnel drop-off, ranked by step. Defines
+  a `step_order`/`step_name` metadata contract (see EVENT_SCHEMA.md). Flutter
+  emits `onboarding_step_completed` per this contract (two steps: welcome,
+  preferences) with a stable per-app-session `session_id`; payload shape
+  (`step_order` int, `step_name` string, snake_case, `user_id` absent at that
+  layer/stamped downstream) is locked down by Flutter unit tests. Backend
+  RLS/schema confirmed to need no change. Not yet promoted to "validated"
+  because it has not been run as a live insert against a real Supabase
+  project (needs a signed-in account completing onboarding in a deployed
+  build, then a pipeline run to confirm output in `analytics.bq_results`).
 
 ## Planned / incomplete
 
 - Scheduled deployment of the Python pipeline.
 - Dedicated least-privilege ETL database role.
 - Distance segmentation for BQ6.
-- BQ3 onboarding drop-off (requires onboarding events).
+- Kotlin emission of `onboarding_step_completed` (Flutter side is done; Kotlin has no onboarding flow instrumented yet).
 - BQ8 diversity experiment metrics.
 - BQ10 weather/time-of-day analysis.
 - Weather external-service integration.
