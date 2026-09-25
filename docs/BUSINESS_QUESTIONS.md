@@ -20,6 +20,12 @@ Which quest/context characteristics are most associated with users abandoning a 
 
 How diverse are the recommendations shown to users over time?
 
+Implemented as an experiment: `public.recommend_quests` assigns each user a
+stable arm (`control` = BQ5 ranking, `diverse` = novelty + category-repeat
+penalties). BQ8 reports, per variant and week: distinct categories per list,
+normalised category entropy, catalogue coverage, repeat-exposure rate, and the
+acceptance rate as a guardrail. See `docs/EVENT_SCHEMA.md` for the event contract.
+
 ## BQ9 — Quest Category Performance
 **Type 3**
 

@@ -51,3 +51,21 @@ onboarding attempt (session), not per user account, so a session without an
 id cannot be placed in the funnel. Clients should emit one
 `onboarding_step_completed` event per completed step, in order, without
 skipping `step_order` values.
+
+## `recommendation_shown` metadata contract (BQ8)
+
+BQ8 (recommendation diversity) is an A/B experiment. The variant is assigned
+**server-side** by `public.recommend_quests` (stable hash of `auth.uid()`;
+`control` = BQ5 ranking, `diverse` = novelty + category-repeat penalties). The
+RPC returns `variant` and `rank_position` per row. Clients must copy them into
+each `recommendation_shown` event's `metadata`:
+
+- `variant` (text, `control` | `diverse`) — copied from the RPC row.
+- `rank` (integer, 1-based) — the RPC's `rank_position`.
+- `batch_id` (uuid string) — generated once per RPC call and shared by every
+  event of that list, so BQ8 can measure diversity *within* a list.
+
+Events without these fields still count, under variant `unassigned`, with a
+`session_id` + second-level timestamp as the batch key.
+`recommendation_accepted` needs no extra fields; BQ8 links it to the shown
+event by `user_id` + `session_id` + `quest_id`.

@@ -7,6 +7,10 @@ BQ3 relies on the `onboarding_step_completed` metadata contract defined in
 docs/EVENT_SCHEMA.md (`step_order` int, `step_name` text). No client emits this
 event yet, so the query is validated against seeded/synthetic data until Kotlin
 and Flutter implement the contract.
+BQ8 is a Type 3 experiment (control vs diverse arm of `public.recommend_quests`).
+It relies on `metadata.variant` / `metadata.batch_id` / `metadata.rank` of
+`recommendation_shown` events (docs/EVENT_SCHEMA.md); events without them fall
+back to variant 'unassigned' and a session/second batch key.
 """
 
 BQ3_ONBOARDING_DROPOFF_SQL = """
@@ -104,6 +108,162 @@ group by
     q.duration_minutes,
     q.estimated_cost
 order by abandoned_count desc, abandon_reason;
+"""
+
+BQ8_RECOMMENDATION_DIVERSITY_SQL = """
+with shown_raw as (
+    select
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        q.category,
+        ae.occurred_at,
+        coalesce(ae.metadata->>'variant', 'unassigned') as variant,
+        coalesce(
+            ae.metadata->>'batch_id',
+            ae.session_id::text || '|' || date_trunc('second', ae.occurred_at)::text,
+            ae.id::text
+        ) as batch_id
+    from public.analytics_events ae
+    join public.quests q on q.id = ae.quest_id
+    where ae.event_type = 'recommendation_shown'
+      and ae.occurred_at >= now() - interval '30 days'
+),
+shown_dedup as (
+    -- one row per quest per recommendation list
+    select distinct on (variant, batch_id, user_id, quest_id)
+        user_id,
+        session_id,
+        quest_id,
+        category,
+        occurred_at,
+        variant,
+        batch_id,
+        date_trunc('week', occurred_at)::date as week_start
+    from shown_raw
+    order by variant, batch_id, user_id, quest_id, occurred_at
+),
+shown as (
+    select
+        sd.*,
+        lag(occurred_at) over (
+            partition by user_id, quest_id order by occurred_at
+        ) as prev_shown_at
+    from shown_dedup sd
+),
+batch_stats as (
+    select
+        variant,
+        week_start,
+        batch_id,
+        count(*) as list_size,
+        count(distinct category) as distinct_categories
+    from shown
+    group by variant, week_start, batch_id
+),
+list_diversity as (
+    select
+        variant,
+        week_start,
+        count(*) as lists_shown,
+        round(avg(distinct_categories), 2) as avg_distinct_categories_per_list,
+        round(avg(distinct_categories::numeric / list_size), 3) as avg_category_diversity_ratio
+    from batch_stats
+    where list_size >= 2
+    group by variant, week_start
+),
+exposure as (
+    select
+        variant,
+        week_start,
+        count(*) as impressions,
+        count(distinct user_id) as users,
+        count(distinct quest_id) as distinct_quests_shown,
+        round(
+            100.0 * count(*) filter (
+                where prev_shown_at is not null
+                  and occurred_at - prev_shown_at <= interval '7 days'
+            ) / nullif(count(*), 0),
+            2
+        ) as repeat_exposure_pct
+    from shown
+    group by variant, week_start
+),
+category_share as (
+    select
+        variant,
+        week_start,
+        category,
+        count(*)::numeric / sum(count(*)) over (partition by variant, week_start) as p
+    from shown
+    group by variant, week_start, category
+),
+entropy as (
+    -- Shannon entropy of shown categories, normalised by the active catalogue's
+    -- category count (0 = one category only, 1 = perfectly even spread).
+    select
+        cs.variant,
+        cs.week_start,
+        round(
+            (-sum(cs.p * ln(cs.p)) / nullif(ln(cat.total_categories), 0))::numeric,
+            3
+        ) as category_entropy_norm
+    from category_share cs
+    cross join (
+        select count(distinct category)::numeric as total_categories
+        from public.quests
+        where is_active = true
+    ) cat
+    group by cs.variant, cs.week_start, cat.total_categories
+),
+catalog as (
+    select count(*)::numeric as active_quests
+    from public.quests
+    where is_active = true
+),
+accepted as (
+    -- guardrail: accepted recommendations must not collapse under the diverse arm
+    select distinct
+        s.variant,
+        s.week_start,
+        s.user_id,
+        s.session_id,
+        s.quest_id
+    from shown s
+    join public.analytics_events a
+      on a.user_id = s.user_id
+     and a.session_id is not distinct from s.session_id
+     and a.quest_id = s.quest_id
+     and a.event_type = 'recommendation_accepted'
+),
+acceptance as (
+    select
+        variant,
+        week_start,
+        count(*) as accepted_count
+    from accepted
+    group by variant, week_start
+)
+select
+    e.variant,
+    e.week_start,
+    e.users,
+    coalesce(ld.lists_shown, 0) as lists_shown,
+    e.impressions,
+    ld.avg_distinct_categories_per_list,
+    ld.avg_category_diversity_ratio,
+    en.category_entropy_norm,
+    e.distinct_quests_shown,
+    round(100.0 * e.distinct_quests_shown / nullif(c.active_quests, 0), 2) as catalog_coverage_pct,
+    e.repeat_exposure_pct,
+    coalesce(a.accepted_count, 0) as accepted_count,
+    round(100.0 * coalesce(a.accepted_count, 0) / nullif(e.impressions, 0), 2) as acceptance_rate_pct
+from exposure e
+left join list_diversity ld using (variant, week_start)
+left join entropy en using (variant, week_start)
+left join acceptance a using (variant, week_start)
+cross join catalog c
+order by e.week_start desc, e.variant;
 """
 
 USER_FEATURES_SQL = """

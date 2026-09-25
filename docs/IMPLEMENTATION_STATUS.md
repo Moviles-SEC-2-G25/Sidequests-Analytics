@@ -31,13 +31,21 @@
   project (needs a signed-in account completing onboarding in a deployed
   build, then a pipeline run to confirm output in `analytics.bq_results`).
 
+- BQ8 recommendation-diversity experiment. Backend migration 008 adds the
+  server-side `control`/`diverse` variant to `public.recommend_quests`
+  (returns `variant`, `rank_position`, `category`); `BQ8_RECOMMENDATION_DIVERSITY_SQL`
+  and the `bq8` pipeline job compute per-variant/week diversity metrics. Both
+  were exercised against a local PostgreSQL 17 with migrations 001-008 and
+  synthetic events. Not yet "validated": needs the migration applied to Supabase
+  and Flutter/Kotlin emitting `variant`/`rank`/`batch_id` in
+  `recommendation_shown` metadata, then a pipeline run on real events.
+
 ## Planned / incomplete
 
 - Scheduled deployment of the Python pipeline.
 - Dedicated least-privilege ETL database role.
 - Distance segmentation for BQ6.
 - Kotlin emission of `onboarding_step_completed` (Flutter side is done; Kotlin has no onboarding flow instrumented yet).
-- BQ8 diversity experiment metrics.
 - BQ10 weather/time-of-day analysis.
 - Weather external-service integration.
 - Firebase Cloud Messaging.
