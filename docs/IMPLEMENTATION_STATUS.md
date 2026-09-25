@@ -13,6 +13,12 @@
 - BQ6 base query: abandonment reason segmented by duration and cost.
 - BQ5 shared runtime recommender implemented as the authenticated PostgreSQL RPC `public.recommend_quests`.
 - BQ5 validated end-to-end from the Kotlin app, including time filtering and immediate session-level “Not for me” exclusions.
+- BQ8 recommendation-diversity experiment (Type 3). Backend migration 008 is
+  applied in Supabase and adds the server-side `control`/`diverse` variant to
+  `public.recommend_quests` (returns `variant`, `rank_position`, `category`).
+  Flutter emits `variant`/`rank`/`batch_id` in `recommendation_shown` metadata.
+  `BQ8_RECOMMENDATION_DIVERSITY_SQL` and the `bq8` pipeline job compute
+  per-variant/week diversity metrics.
 - Minimal Streamlit dashboard code for stored BQ outputs.
 
 ## Implemented in code but not yet deployed end-to-end
@@ -30,15 +36,6 @@
   because it has not been run as a live insert against a real Supabase
   project (needs a signed-in account completing onboarding in a deployed
   build, then a pipeline run to confirm output in `analytics.bq_results`).
-
-- BQ8 recommendation-diversity experiment. Backend migration 008 adds the
-  server-side `control`/`diverse` variant to `public.recommend_quests`
-  (returns `variant`, `rank_position`, `category`); `BQ8_RECOMMENDATION_DIVERSITY_SQL`
-  and the `bq8` pipeline job compute per-variant/week diversity metrics. Both
-  were exercised against a local PostgreSQL 17 with migrations 001-008 and
-  synthetic events. Not yet "validated": needs the migration applied to Supabase
-  and Flutter/Kotlin emitting `variant`/`rank`/`batch_id` in
-  `recommendation_shown` metadata, then a pipeline run on real events.
 
 ## Planned / incomplete
 
