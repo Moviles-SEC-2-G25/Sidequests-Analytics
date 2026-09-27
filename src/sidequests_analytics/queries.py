@@ -12,6 +12,11 @@ BQ8 is a Type 3 experiment (control vs diverse arm of `public.recommend_quests`)
 It relies on `metadata.variant` / `metadata.batch_id` / `metadata.rank` of
 `recommendation_shown` events (docs/EVENT_SCHEMA.md); events without them fall
 back to variant 'unassigned' and a session/second batch key.
+BQ4 compares the "instant plan" quick-start path against the standard flow.
+It relies on `metadata.start_path` / `metadata.seconds_to_start` /
+`metadata.interactions_to_start` on `recommendation_accepted` and
+`quest_started` events (docs/EVENT_SCHEMA.md); events without `start_path`
+are ignored.
 """
 
 BQ3_ONBOARDING_DROPOFF_SQL = """
@@ -283,6 +288,57 @@ left join entropy en using (variant, week_start)
 left join acceptance a using (variant, week_start)
 cross join catalog c
 order by e.week_start desc, e.variant;
+"""
+
+BQ4_INSTANT_PLAN_SQL = """
+with starts as (
+    select
+        ae.metadata->>'start_path' as start_path,
+        (ae.metadata->>'seconds_to_start')::numeric as seconds_to_start,
+        (ae.metadata->>'interactions_to_start')::numeric as interactions_to_start
+    from public.analytics_events ae
+    where ae.event_type in ('recommendation_accepted', 'quest_started')
+      and ae.metadata ? 'start_path'
+),
+per_path as (
+    select
+        start_path,
+        count(*) as starts_count,
+        round(avg(seconds_to_start), 2) as avg_seconds_to_start,
+        round(
+            (percentile_cont(0.5) within group (order by seconds_to_start))::numeric,
+            2
+        ) as median_seconds_to_start,
+        round(avg(interactions_to_start), 2) as avg_interactions_to_start
+    from starts
+    group by start_path
+),
+baseline as (
+    select
+        avg_seconds_to_start as standard_avg_seconds,
+        avg_interactions_to_start as standard_avg_interactions
+    from per_path
+    where start_path = 'standard'
+)
+select
+    pp.start_path,
+    pp.starts_count,
+    pp.avg_seconds_to_start,
+    pp.median_seconds_to_start,
+    pp.avg_interactions_to_start,
+    round(
+        100.0 * (b.standard_avg_seconds - pp.avg_seconds_to_start)
+        / nullif(b.standard_avg_seconds, 0),
+        2
+    ) as seconds_reduction_pct_vs_standard,
+    round(
+        100.0 * (b.standard_avg_interactions - pp.avg_interactions_to_start)
+        / nullif(b.standard_avg_interactions, 0),
+        2
+    ) as interactions_reduction_pct_vs_standard
+from per_path pp
+cross join baseline b
+order by pp.starts_count desc, pp.start_path;
 """
 
 USER_FEATURES_SQL = """

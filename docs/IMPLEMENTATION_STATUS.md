@@ -42,6 +42,12 @@
 - Scheduled deployment of the Python pipeline.
 - Dedicated least-privilege ETL database role.
 - Kotlin emission of `onboarding_step_completed` (Flutter side is done; Kotlin has no onboarding flow instrumented yet).
+- BQ4 query: instant-plan vs standard start-path comparison. Defines a
+  `start_path`/`seconds_to_start`/`interactions_to_start` metadata contract
+  (see EVENT_SCHEMA.md). No client emits it yet, so the query has only been
+  checked against synthetic data; needs Kotlin/Flutter to emit these fields
+  on `recommendation_accepted`/`quest_started`, then a pipeline run to
+  confirm output in `analytics.bq_results`.
 - BQ10 weather/time-of-day analysis.
 - Weather external-service integration.
 - Firebase Cloud Messaging.

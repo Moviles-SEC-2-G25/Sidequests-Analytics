@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sidequests_analytics.queries import (
     BQ3_ONBOARDING_DROPOFF_SQL,
+    BQ4_INSTANT_PLAN_SQL,
     BQ6_ABANDONMENT_BASE_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
@@ -44,6 +45,25 @@ def test_bq8_reports_diversity_metrics_and_acceptance_guardrail():
     assert "repeat_exposure_pct" in sql
     assert "recommendation_accepted" in sql
     assert "acceptance_rate_pct" in sql
+
+
+def test_bq4_compares_instant_plan_against_standard_start_path():
+    sql = BQ4_INSTANT_PLAN_SQL.lower()
+    assert "recommendation_accepted" in sql
+    assert "quest_started" in sql
+    assert "metadata ? 'start_path'" in sql
+    assert "start_path" in sql
+    assert "group by start_path" in sql
+
+
+def test_bq4_reports_median_and_reduction_vs_standard():
+    sql = BQ4_INSTANT_PLAN_SQL.lower()
+    assert "percentile_cont(0.5)" in sql
+    assert "median_seconds_to_start" in sql
+    assert "avg_interactions_to_start" in sql
+    assert "seconds_reduction_pct_vs_standard" in sql
+    assert "interactions_reduction_pct_vs_standard" in sql
+    assert "where start_path = 'standard'" in sql
 
 
 def test_bq9_targets_last_30_days_and_completion():

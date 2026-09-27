@@ -69,3 +69,20 @@ Events without these fields still count, under variant `unassigned`, with a
 `session_id` + second-level timestamp as the batch key.
 `recommendation_accepted` needs no extra fields; BQ8 links it to the shown
 event by `user_id` + `session_id` + `quest_id`.
+
+## `recommendation_accepted` / `quest_started` metadata contract (BQ4)
+
+BQ4 (instant plan adoption) compares the "instant plan" quick-start path
+against the standard flow. `analytics_events.metadata` must include, on
+whichever of `recommendation_accepted` or `quest_started` marks the quest as
+started:
+
+- `start_path` (text, `instant_plan` | `standard`) — which flow the user went
+  through to start the quest. Required; events without it are ignored by BQ4.
+- `seconds_to_start` (numeric) — elapsed time from the flow's entry point to
+  the quest actually starting.
+- `interactions_to_start` (integer) — number of taps/screens the user went
+  through before the quest started.
+
+Clients should emit exactly one of `recommendation_accepted` /
+`quest_started` per quest start, with these three fields set.

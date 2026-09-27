@@ -5,6 +5,13 @@
 
 Which onboarding step has the highest abandonment/drop-off rate?
 
+## BQ4 — Instant Plan Adoption
+**Type 2**
+
+Does the "instant plan" quick-start path get users into a quest faster, and with fewer interactions, than the standard flow?
+
+Computed from `metadata.start_path` (`instant_plan` | `standard`) on `recommendation_accepted`/`quest_started` events. BQ4 reports, per path: number of starts, average and median `seconds_to_start`, average `interactions_to_start`, and the percentage reduction of both versus the `standard` path. See `docs/EVENT_SCHEMA.md` for the event contract.
+
 ## BQ5 — Personalized Quest Recommendation
 **Type 2**
 
