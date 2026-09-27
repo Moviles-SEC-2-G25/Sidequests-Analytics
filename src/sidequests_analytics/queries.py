@@ -1,8 +1,9 @@
 """SQL used by the first implemented Sprint 2 analytics jobs.
 
 BQ9 is fully computable from the current operational schema.
-BQ6 currently covers abandonment reason, duration and cost. Distance segmentation
-will be added when the mobile Context Manager starts sending distance_meters.
+BQ6 covers abandonment reason, duration, cost and distance. Distance comes from
+the `quest_abandoned` analytics event (distance_meters, sent by Flutter's
+Context Manager); abandonments without a matching event fall in 'unknown'.
 BQ3 relies on the `onboarding_step_completed` metadata contract defined in
 docs/EVENT_SCHEMA.md (`step_order` int, `step_name` text). No client emits this
 event yet, so the query is validated against seeded/synthetic data until Kotlin
@@ -99,14 +100,32 @@ select
     coalesce(uq.abandon_reason, 'Unspecified') as abandon_reason,
     q.duration_minutes,
     q.estimated_cost,
+    case
+        when ev.distance_meters is null then 'unknown'
+        when ev.distance_meters < 500 then '<500m'
+        when ev.distance_meters < 2000 then '500m-2km'
+        when ev.distance_meters < 10000 then '2-10km'
+        else '>10km'
+    end as distance_bucket,
     count(*) as abandoned_count
 from public.user_quests uq
 join public.quests q on q.id = uq.quest_id
+left join lateral (
+    -- the quest_abandoned event emitted when this user abandoned this quest
+    select ae.distance_meters
+    from public.analytics_events ae
+    where ae.event_type = 'quest_abandoned'
+      and ae.user_id = uq.user_id
+      and ae.quest_id = uq.quest_id
+    order by abs(extract(epoch from (ae.occurred_at - uq.abandoned_at)))
+    limit 1
+) ev on true
 where uq.status = 'abandoned'
 group by
     coalesce(uq.abandon_reason, 'Unspecified'),
     q.duration_minutes,
-    q.estimated_cost
+    q.estimated_cost,
+    distance_bucket
 order by abandoned_count desc, abandon_reason;
 """
 

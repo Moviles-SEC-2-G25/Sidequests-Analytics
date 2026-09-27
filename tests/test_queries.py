@@ -61,6 +61,14 @@ def test_bq6_uses_current_abandonment_sources():
     assert "status = 'abandoned'" in sql
 
 
+def test_bq6_segments_by_distance_from_abandon_events():
+    sql = BQ6_ABANDONMENT_BASE_SQL.lower()
+    assert "analytics_events" in sql
+    assert "event_type = 'quest_abandoned'" in sql
+    assert "distance_meters" in sql
+    assert "distance_bucket" in sql
+
+
 def test_user_features_are_per_user():
     sql = USER_FEATURES_SQL.lower()
     assert "group by uq.user_id" in sql

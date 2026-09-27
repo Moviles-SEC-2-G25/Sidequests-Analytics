@@ -10,7 +10,7 @@
 - `analytics.bq_results`.
 - Python/SQLAlchemy analytics engine skeleton with automated CI tests.
 - BQ9 query: category completion rate for accepted quests in the last 30 days.
-- BQ6 base query: abandonment reason segmented by duration and cost.
+- BQ6 base query: abandonment reason segmented by duration, cost and distance (bucket from the `quest_abandoned` event's `distance_meters`; Flutter emits it).
 - BQ5 shared runtime recommender implemented as the authenticated PostgreSQL RPC `public.recommend_quests`.
 - BQ5 validated end-to-end from the Kotlin app, including time filtering and immediate session-level “Not for me” exclusions.
 - BQ8 recommendation-diversity experiment (Type 3). Backend migration 008 is
@@ -41,7 +41,6 @@
 
 - Scheduled deployment of the Python pipeline.
 - Dedicated least-privilege ETL database role.
-- Distance segmentation for BQ6.
 - Kotlin emission of `onboarding_step_completed` (Flutter side is done; Kotlin has no onboarding flow instrumented yet).
 - BQ10 weather/time-of-day analysis.
 - Weather external-service integration.
