@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sidequests_analytics.queries import (
     BQ3_ONBOARDING_DROPOFF_SQL,
     BQ4_INSTANT_PLAN_SQL,
+    BQ5_PERSONALIZED_RECOMMENDATION_SQL,
     BQ6_ABANDONMENT_BASE_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
@@ -64,6 +65,17 @@ def test_bq4_reports_median_and_reduction_vs_standard():
     assert "seconds_reduction_pct_vs_standard" in sql
     assert "interactions_reduction_pct_vs_standard" in sql
     assert "where start_path = 'standard'" in sql
+
+
+
+def test_bq5_exposes_top_three_personalized_recommendations():
+    sql = BQ5_PERSONALIZED_RECOMMENDATION_SQL.lower()
+    assert "recommendation_shown" in sql
+    assert "rank_position <= 3" in sql
+    assert "available_minutes" in sql
+    assert "social_level" in sql
+    assert "location_mode" in sql
+    assert "batch_id" in sql
 
 
 def test_bq9_targets_last_30_days_and_completion():
