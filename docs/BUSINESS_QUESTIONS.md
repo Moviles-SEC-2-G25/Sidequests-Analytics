@@ -17,6 +17,8 @@ Computed from `metadata.start_path` (`instant_plan` | `standard`) on `recommenda
 
 Given the user's available time, preferred level of social interaction, interests, and previous quest interactions, which three available Sidequests have the highest relevance for the current session?
 
+Runtime ranking is provided by the shared authenticated `public.recommend_quests` RPC. The analytics pipeline implements BQ5 evidence through `BQ5_PERSONALIZED_RECOMMENDATION_SQL`, which reads real `recommendation_shown` events and stores the latest top-three recommendation list per user/session in `analytics.bq_results`. This keeps the low-latency ranking in the backend while making BQ5 explicitly reproducible inside the analytics system.
+
 ## BQ6 — Quest Abandonment Reasons
 **Type 2**
 
