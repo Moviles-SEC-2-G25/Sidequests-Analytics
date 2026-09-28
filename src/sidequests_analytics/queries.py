@@ -100,6 +100,60 @@ group by category
 order by completion_rate_pct asc nulls last, category;
 """
 
+BQ5_PERSONALIZED_RECOMMENDATION_SQL = """
+with shown as (
+    select
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        ae.available_minutes,
+        ae.social_level,
+        ae.location_mode,
+        ae.occurred_at,
+        coalesce((ae.metadata->>'rank')::int, 999) as rank_position,
+        coalesce(
+            ae.metadata->>'batch_id',
+            ae.session_id::text || '|' || date_trunc('second', ae.occurred_at)::text
+        ) as batch_id,
+        q.title,
+        q.category,
+        q.duration_minutes
+    from public.analytics_events ae
+    join public.quests q on q.id = ae.quest_id
+    where ae.event_type = 'recommendation_shown'
+      and ae.quest_id is not null
+),
+latest_batch as (
+    select distinct on (user_id, session_id)
+        user_id,
+        session_id,
+        batch_id,
+        max(occurred_at) over (partition by user_id, session_id, batch_id) as batch_time
+    from shown
+    order by user_id, session_id, batch_time desc
+)
+select
+    s.user_id,
+    s.session_id,
+    s.batch_id,
+    s.rank_position,
+    s.quest_id,
+    s.title,
+    s.category,
+    s.duration_minutes,
+    s.available_minutes,
+    s.social_level,
+    s.location_mode,
+    s.occurred_at
+from shown s
+join latest_batch lb
+  on lb.user_id = s.user_id
+ and lb.session_id is not distinct from s.session_id
+ and lb.batch_id = s.batch_id
+where s.rank_position <= 3
+order by s.user_id, s.session_id, s.rank_position;
+"""
+
 BQ6_ABANDONMENT_BASE_SQL = """
 select
     coalesce(uq.abandon_reason, 'Unspecified') as abandon_reason,
