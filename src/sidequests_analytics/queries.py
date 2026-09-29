@@ -400,19 +400,24 @@ with mode_events as (
     select
         session_id,
         lower(location_mode) as location_mode,
+        event_type,
         lower(coalesce(metadata->>'time_of_day', 'unknown')) as time_of_day,
         lower(coalesce(metadata->>'weather_condition', 'unknown')) as weather_condition,
         occurred_at
     from public.analytics_events
-    where event_type = 'location_mode_selected'
+    where event_type in (
+        'location_independent_mode_selected',
+        'location_based_mode_selected'
+    )
       and session_id is not null
       and occurred_at >= now() - interval '30 days'
-      and location_mode in ('all', 'gps', 'anywhere')
+      and location_mode in ('gps', 'anywhere')
 ),
 session_modes as (
     select
         session_id,
-        bool_or(location_mode = 'anywhere') as used_location_independent
+        bool_or(event_type = 'location_independent_mode_selected'
+                or location_mode = 'anywhere') as used_location_independent
     from mode_events
     group by session_id
 ),
@@ -429,7 +434,8 @@ context_sessions as (
         session_id,
         time_of_day,
         weather_condition,
-        bool_or(location_mode = 'anywhere') as used_location_independent
+        bool_or(event_type = 'location_independent_mode_selected'
+                or location_mode = 'anywhere') as used_location_independent
     from mode_events
     group by session_id, time_of_day, weather_condition
 ),
