@@ -425,13 +425,13 @@ overall as (
     from session_modes
 ),
 context_sessions as (
-    select distinct on (session_id, time_of_day, weather_condition)
+    select
         session_id,
         time_of_day,
         weather_condition,
-        (location_mode = 'anywhere') as used_location_independent
+        bool_or(location_mode = 'anywhere') as used_location_independent
     from mode_events
-    order by session_id, time_of_day, weather_condition, occurred_at desc
+    group by session_id, time_of_day, weather_condition
 ),
 by_context as (
     select
