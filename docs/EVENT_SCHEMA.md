@@ -11,7 +11,8 @@ Both Kotlin and Flutter must emit the same event names and compatible dimensions
 - `quest_started`
 - `quest_abandoned`
 - `quest_completed`
-- `location_mode_selected`
+- `location_independent_mode_selected`
+- `location_based_mode_selected`
 
 ## Stored dimensions
 
@@ -88,11 +89,16 @@ Clients should emit exactly one of `recommendation_accepted` /
 `quest_started` per quest start, with these three fields set.
 
 
-## BQ10 location mode event
+## BQ10 location mode events
 
-BQ10 uses the location_mode_selected event. The selected value is stored in the
-location_mode column, and the client should include time_of_day and
-weather_condition in metadata. Weather can be unknown when it is not available.
+BQ10 uses two selection events:
+
+- `location_independent_mode_selected` when the user selects **Anywhere**.
+- `location_based_mode_selected` when the user selects **Nearby**.
+
+Both events store the selected value in the `location_mode` column and include
+`time_of_day` and `weather_condition` in metadata. Weather can be
+`unknown` when it is not available.
 
 The query counts each session once. A session is considered
-location-independent when it selected anywhere at least once.
+location-independent when it selected the independent mode at least once.
