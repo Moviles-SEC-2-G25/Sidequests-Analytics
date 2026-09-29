@@ -10,6 +10,7 @@ from sidequests_analytics.queries import (
     BQ6_ABANDONMENT_BASE_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
+    BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
     USER_FEATURES_SQL,
 )
 
@@ -106,3 +107,14 @@ def test_user_features_are_per_user():
     assert "group by uq.user_id" in sql
     assert "preferred_categories" in sql
     assert "completion_rate" in sql
+
+
+def test_bq10_measures_location_independent_usage_by_session_and_context():
+    sql = BQ10_LOCATION_INDEPENDENT_USAGE_SQL.lower()
+    assert "event_type = 'location_mode_selected'" in sql
+    assert "location_mode = 'anywhere'" in sql
+    assert "count(*) filter (where used_location_independent)" in sql
+    assert "time_of_day" in sql
+    assert "weather_condition" in sql
+    assert "location_independent_usage_pct" in sql
+    assert "30 days" in sql
