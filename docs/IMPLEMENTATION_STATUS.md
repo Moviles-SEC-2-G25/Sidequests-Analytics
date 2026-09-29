@@ -49,7 +49,7 @@
   checked against synthetic data; needs Kotlin/Flutter to emit these fields
   on `recommendation_accepted`/`quest_started`, then a pipeline run to
   confirm output in `analytics.bq_results`.
-- Live BQ10 batch execution against hosted Supabase; the query and pipeline job are implemented and covered by CI tests, but the live run still needs to be demonstrated with real location_mode_selected events.
+- Live BQ10 batch execution against hosted Supabase; the query and pipeline job are implemented and covered by CI tests, but the live run still needs to be demonstrated with real `location_independent_mode_selected` / `location_based_mode_selected` events.
 - Weather external-service integration.
 - Firebase Cloud Messaging.
 - Google Maps Platform.
