@@ -86,3 +86,13 @@ started:
 
 Clients should emit exactly one of `recommendation_accepted` /
 `quest_started` per quest start, with these three fields set.
+
+
+## BQ10 location mode event
+
+BQ10 uses the location_mode_selected event. The selected value is stored in the
+location_mode column, and the client should include time_of_day and
+weather_condition in metadata. Weather can be unknown when it is not available.
+
+The query counts each session once. A session is considered
+location-independent when it selected anywhere at least once.
