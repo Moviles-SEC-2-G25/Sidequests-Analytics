@@ -111,8 +111,9 @@ def test_user_features_are_per_user():
 
 def test_bq10_measures_location_independent_usage_by_session_and_context():
     sql = BQ10_LOCATION_INDEPENDENT_USAGE_SQL.lower()
-    assert "event_type = 'location_mode_selected'" in sql
-    assert "location_mode = 'anywhere'" in sql
+    assert "location_independent_mode_selected" in sql
+    assert "location_based_mode_selected" in sql
+    assert "location_mode in ('gps', 'anywhere')" in sql
     assert "count(*) filter (where used_location_independent)" in sql
     assert "time_of_day" in sql
     assert "weather_condition" in sql
