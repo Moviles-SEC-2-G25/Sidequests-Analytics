@@ -395,6 +395,85 @@ cross join baseline b
 order by pp.starts_count desc, pp.start_path;
 """
 
+BQ10_LOCATION_INDEPENDENT_USAGE_SQL = """
+with mode_events as (
+    select
+        session_id,
+        lower(location_mode) as location_mode,
+        lower(coalesce(metadata->>'time_of_day', 'unknown')) as time_of_day,
+        lower(coalesce(metadata->>'weather_condition', 'unknown')) as weather_condition,
+        occurred_at
+    from public.analytics_events
+    where event_type = 'location_mode_selected'
+      and session_id is not null
+      and occurred_at >= now() - interval '30 days'
+      and location_mode in ('all', 'gps', 'anywhere')
+),
+session_modes as (
+    select
+        session_id,
+        bool_or(location_mode = 'anywhere') as used_location_independent
+    from mode_events
+    group by session_id
+),
+overall as (
+    select
+        'overall' as time_of_day,
+        'overall' as weather_condition,
+        count(*) as sessions_with_location_mode,
+        count(*) filter (where used_location_independent) as location_independent_sessions
+    from session_modes
+),
+context_sessions as (
+    select distinct on (session_id, time_of_day, weather_condition)
+        session_id,
+        time_of_day,
+        weather_condition,
+        (location_mode = 'anywhere') as used_location_independent
+    from mode_events
+    order by session_id, time_of_day, weather_condition, occurred_at desc
+),
+by_context as (
+    select
+        time_of_day,
+        weather_condition,
+        count(*) as sessions_with_location_mode,
+        count(*) filter (where used_location_independent) as location_independent_sessions
+    from context_sessions
+    group by time_of_day, weather_condition
+)
+select
+    time_of_day,
+    weather_condition,
+    sessions_with_location_mode,
+    location_independent_sessions,
+    round(
+        100.0 * location_independent_sessions
+        / nullif(sessions_with_location_mode, 0),
+        2
+    ) as location_independent_usage_pct
+from overall
+
+union all
+
+select
+    time_of_day,
+    weather_condition,
+    sessions_with_location_mode,
+    location_independent_sessions,
+    round(
+        100.0 * location_independent_sessions
+        / nullif(sessions_with_location_mode, 0),
+        2
+    ) as location_independent_usage_pct
+from by_context
+order by
+    case when time_of_day = 'overall' then 0 else 1 end,
+    time_of_day,
+    weather_condition;
+"""
+
+
 USER_FEATURES_SQL = """
 with per_user as (
     select
