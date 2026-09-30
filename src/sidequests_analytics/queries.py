@@ -472,7 +472,33 @@ select
         / nullif(sessions_with_location_mode, 0),
         2
     ) as location_independent_usage_pct
-from by_context
+from (
+    select
+        time_of_day,
+        weather_condition,
+        sessions_with_location_mode,
+        location_independent_sessions,
+        round(
+            100.0 * location_independent_sessions
+            / nullif(sessions_with_location_mode, 0),
+            2
+        ) as location_independent_usage_pct
+    from overall
+
+    union all
+
+    select
+        time_of_day,
+        weather_condition,
+        sessions_with_location_mode,
+        location_independent_sessions,
+        round(
+            100.0 * location_independent_sessions
+            / nullif(sessions_with_location_mode, 0),
+            2
+        ) as location_independent_usage_pct
+    from by_context
+) as results
 order by
     case when time_of_day = 'overall' then 0 else 1 end,
     time_of_day,
