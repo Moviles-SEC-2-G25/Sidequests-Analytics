@@ -416,8 +416,10 @@ with mode_events as (
 session_modes as (
     select
         session_id,
-        bool_or(event_type = 'location_independent_mode_selected'
-                or location_mode = 'anywhere') as used_location_independent
+        bool_or(
+            event_type = 'location_independent_mode_selected'
+            or location_mode = 'anywhere'
+        ) as used_location_independent
     from mode_events
     group by session_id
 ),
@@ -434,8 +436,10 @@ context_sessions as (
         session_id,
         time_of_day,
         weather_condition,
-        bool_or(event_type = 'location_independent_mode_selected'
-                or location_mode = 'anywhere') as used_location_independent
+        bool_or(
+            event_type = 'location_independent_mode_selected'
+            or location_mode = 'anywhere'
+        ) as used_location_independent
     from mode_events
     group by session_id, time_of_day, weather_condition
 ),
@@ -447,32 +451,8 @@ by_context as (
         count(*) filter (where used_location_independent) as location_independent_sessions
     from context_sessions
     group by time_of_day, weather_condition
-)
-select
-    time_of_day,
-    weather_condition,
-    sessions_with_location_mode,
-    location_independent_sessions,
-    round(
-        100.0 * location_independent_sessions
-        / nullif(sessions_with_location_mode, 0),
-        2
-    ) as location_independent_usage_pct
-from overall
-
-union all
-
-select
-    time_of_day,
-    weather_condition,
-    sessions_with_location_mode,
-    location_independent_sessions,
-    round(
-        100.0 * location_independent_sessions
-        / nullif(sessions_with_location_mode, 0),
-        2
-    ) as location_independent_usage_pct
-from (
+),
+results as (
     select
         time_of_day,
         weather_condition,
@@ -498,7 +478,14 @@ from (
             2
         ) as location_independent_usage_pct
     from by_context
-) as results
+)
+select
+    time_of_day,
+    weather_condition,
+    sessions_with_location_mode,
+    location_independent_sessions,
+    location_independent_usage_pct
+from results
 order by
     case when time_of_day = 'overall' then 0 else 1 end,
     time_of_day,
