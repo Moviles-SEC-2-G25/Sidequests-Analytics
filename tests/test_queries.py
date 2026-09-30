@@ -82,6 +82,8 @@ def test_bq5_exposes_top_three_personalized_recommendations():
 def test_bq9_targets_last_30_days_and_completion():
     sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
     assert "30 days" in sql
+    assert "from results" in sql
+    assert "case when time_of_day = 'overall' then 0 else 1 end" in sql
     assert "status = 'completed'" in sql
     assert "category" in sql
 
