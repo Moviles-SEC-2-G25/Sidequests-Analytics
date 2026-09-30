@@ -13,6 +13,7 @@ from .queries import (
     BQ6_ABANDONMENT_BASE_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
+    BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
     USER_FEATURES_SQL,
 )
 
@@ -44,6 +45,10 @@ def compute_bq5(engine) -> list[dict]:
 
 def compute_bq6_base(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ6_ABANDONMENT_BASE_SQL), engine))
+
+
+def compute_bq10(engine) -> list[dict]:
+    return _records(pd.read_sql(text(BQ10_LOCATION_INDEPENDENT_USAGE_SQL), engine))
 
 
 def refresh_user_features(engine) -> int:
@@ -107,7 +112,7 @@ def run() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--job",
-        choices=("all", "bq3", "bq4", "bq5", "bq6", "bq8", "bq9", "features"),
+        choices=("all", "bq3", "bq4", "bq5", "bq6", "bq8", "bq9", "bq10", "features"),
         default="all",
     )
     args = parser.parse_args()
@@ -147,6 +152,11 @@ def run() -> None:
         bq9 = compute_bq9(engine)
         store_bq_result(engine, "BQ9", bq9)
         print(f"stored BQ9 rows: {len(bq9)}")
+
+    if args.job in ("all", "bq10"):
+        bq10 = compute_bq10(engine)
+        store_bq_result(engine, "BQ10", bq10)
+        print(f"stored BQ10 rows: {len(bq10)}")
 
 
 if __name__ == "__main__":

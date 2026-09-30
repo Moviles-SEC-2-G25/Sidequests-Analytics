@@ -20,6 +20,7 @@
   `BQ8_RECOMMENDATION_DIVERSITY_SQL` and the `bq8` pipeline job compute
   per-variant/week diversity metrics.
 - Minimal Streamlit dashboard code for stored BQ outputs.
+- BQ10 query and bq10 pipeline job: session-level location-independent usage with time-of-day and weather breakdowns.
 
 ## Implemented in code but not yet deployed end-to-end
 
@@ -48,7 +49,7 @@
   checked against synthetic data; needs Kotlin/Flutter to emit these fields
   on `recommendation_accepted`/`quest_started`, then a pipeline run to
   confirm output in `analytics.bq_results`.
-- BQ10 weather/time-of-day analysis.
+- Live BQ10 batch execution against hosted Supabase; the query and pipeline job are implemented and covered by CI tests, but the live run still needs to be demonstrated with real `location_independent_mode_selected` / `location_based_mode_selected` events.
 - Weather external-service integration.
 - Firebase Cloud Messaging.
 - Google Maps Platform.
