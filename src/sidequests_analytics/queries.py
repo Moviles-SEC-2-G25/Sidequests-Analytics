@@ -1,6 +1,9 @@
 """SQL used by the first implemented Sprint 2 analytics jobs.
 
-BQ9 is fully computable from the current operational schema.
+BQ9 is a Type 3 per-category funnel. Acceptance comes from
+`recommendation_shown` / `recommendation_accepted` / `recommendation_skipped`
+events (linked by user + session + quest, like BQ8); completion and abandonment
+come from `user_quests` attempts. No extra metadata contract is needed.
 BQ6 covers abandonment reason, duration, cost and distance. Distance comes from
 the `quest_abandoned` analytics event (distance_meters, sent by Flutter's
 Context Manager); abandonments without a matching event fall in 'unknown'.
@@ -77,27 +80,142 @@ order by dropoff_rate_pct desc nulls last, step_order;
 """
 
 BQ9_CATEGORY_PERFORMANCE_SQL = """
-with accepted as (
+with shown as (
+    -- one impression per user/session/quest: list reloads (filter changes,
+    -- "Not for me") must not inflate the acceptance denominator
+    select distinct
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        q.category
+    from public.analytics_events ae
+    join public.quests q on q.id = ae.quest_id
+    where ae.event_type = 'recommendation_shown'
+      and ae.occurred_at >= now() - interval '30 days'
+),
+shown_outcomes as (
+    -- linked like BQ8: same user + session + quest
     select
-        uq.id,
+        s.category,
+        exists (
+            select 1
+            from public.analytics_events a
+            where a.event_type = 'recommendation_accepted'
+              and a.user_id = s.user_id
+              and a.session_id is not distinct from s.session_id
+              and a.quest_id = s.quest_id
+        ) as was_accepted,
+        exists (
+            select 1
+            from public.analytics_events k
+            where k.event_type = 'recommendation_skipped'
+              and k.user_id = s.user_id
+              and k.session_id is not distinct from s.session_id
+              and k.quest_id = s.quest_id
+        ) as was_skipped
+    from shown s
+),
+recommendation_funnel as (
+    select
+        category,
+        count(*) as recommendations_shown,
+        count(*) filter (where was_accepted) as recommendations_accepted,
+        count(*) filter (where was_skipped) as recommendations_skipped
+    from shown_outcomes
+    group by category
+),
+attempts as (
+    -- every accept inserts a new user_quests row, so one row = one attempt,
+    -- whether it came from a recommendation or from the catalogue
+    select
         q.category,
-        uq.status
+        uq.status,
+        uq.rating,
+        uq.accepted_at,
+        uq.completed_at
     from public.user_quests uq
     join public.quests q on q.id = uq.quest_id
     where uq.accepted_at >= now() - interval '30 days'
+      and uq.status <> 'skipped'
+),
+attempt_funnel as (
+    select
+        category,
+        count(*) as accepted_count,
+        count(*) filter (where status = 'completed') as completed_count,
+        count(*) filter (where status = 'abandoned') as abandoned_count,
+        count(*) filter (where status in ('accepted', 'in_progress')) as open_count,
+        round(
+            (
+                percentile_cont(0.5) within group (
+                    order by extract(epoch from (completed_at - accepted_at)) / 60
+                ) filter (where status = 'completed' and completed_at is not null)
+            )::numeric,
+            1
+        ) as median_minutes_to_complete,
+        round(avg(rating) filter (where status = 'completed'), 2) as avg_rating
+    from attempts
+    group by category
+),
+per_category as (
+    select
+        category,
+        coalesce(rf.recommendations_shown, 0) as recommendations_shown,
+        coalesce(rf.recommendations_accepted, 0) as recommendations_accepted,
+        coalesce(rf.recommendations_skipped, 0) as recommendations_skipped,
+        coalesce(af.accepted_count, 0) as accepted_count,
+        coalesce(af.completed_count, 0) as completed_count,
+        coalesce(af.abandoned_count, 0) as abandoned_count,
+        coalesce(af.open_count, 0) as open_count,
+        af.median_minutes_to_complete,
+        af.avg_rating,
+        100.0 * rf.recommendations_accepted
+            / nullif(rf.recommendations_shown, 0) as acceptance_rate,
+        100.0 * rf.recommendations_skipped
+            / nullif(rf.recommendations_shown, 0) as skip_rate,
+        100.0 * af.completed_count / nullif(af.accepted_count, 0) as completion_rate,
+        100.0 * af.completed_count
+            / nullif(af.completed_count + af.abandoned_count, 0) as resolved_completion_rate,
+        100.0 * af.abandoned_count / nullif(af.accepted_count, 0) as abandonment_rate
+    from recommendation_funnel rf
+    full outer join attempt_funnel af using (category)
+),
+overall as (
+    -- baseline every category is compared against
+    select
+        (
+            select 100.0 * count(*) filter (where was_accepted) / nullif(count(*), 0)
+            from shown_outcomes
+        ) as overall_acceptance_rate,
+        (
+            select 100.0 * count(*) filter (where status = 'completed') / nullif(count(*), 0)
+            from attempts
+        ) as overall_completion_rate
 )
 select
-    category,
-    count(*) as accepted_count,
-    count(*) filter (where status = 'completed') as completed_count,
-    round(
-        100.0 * count(*) filter (where status = 'completed')
-        / nullif(count(*), 0),
-        2
-    ) as completion_rate_pct
-from accepted
-group by category
-order by completion_rate_pct asc nulls last, category;
+    pc.category,
+    pc.recommendations_shown,
+    pc.recommendations_accepted,
+    pc.recommendations_skipped,
+    round(pc.acceptance_rate, 2) as recommendation_acceptance_rate_pct,
+    round(pc.skip_rate, 2) as recommendation_skip_rate_pct,
+    pc.accepted_count,
+    pc.completed_count,
+    pc.abandoned_count,
+    pc.open_count,
+    round(pc.completion_rate, 2) as completion_rate_pct,
+    round(pc.resolved_completion_rate, 2) as resolved_completion_rate_pct,
+    round(pc.abandonment_rate, 2) as abandonment_rate_pct,
+    pc.median_minutes_to_complete,
+    pc.avg_rating,
+    round(pc.acceptance_rate - o.overall_acceptance_rate, 2) as acceptance_rate_vs_overall_pp,
+    round(pc.completion_rate - o.overall_completion_rate, 2) as completion_rate_vs_overall_pp
+from per_category pc
+cross join overall o
+order by
+    completion_rate_pct desc nulls last,
+    recommendation_acceptance_rate_pct desc nulls last,
+    pc.category;
 """
 
 BQ5_PERSONALIZED_RECOMMENDATION_SQL = """
