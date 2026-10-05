@@ -40,6 +40,23 @@ acceptance rate as a guardrail. See `docs/EVENT_SCHEMA.md` for the event contrac
 
 How do quest categories compare in acceptance/completion performance?
 
+Computed per category over the last 30 days, as a two-stage funnel:
+
+- **Acceptance** (from `analytics_events`): unique recommendation impressions
+  (one per user + session + quest, so list reloads do not inflate it), how many
+  were accepted and how many were skipped ("Not for me"). Accepts/skips are
+  linked to the impression by `user_id` + `session_id` + `quest_id`, as in BQ8.
+- **Completion** (from `user_quests`): every accepted attempt, whether it came
+  from a recommendation or the catalogue, split into completed, abandoned and
+  still open. Reports completion rate over all attempts, completion rate over
+  resolved attempts only (completed / (completed + abandoned)), abandonment
+  rate, median minutes from accept to complete, and average rating.
+
+Each category also gets `acceptance_rate_vs_overall_pp` and
+`completion_rate_vs_overall_pp`: the gap, in percentage points, against the
+average of all categories. Rows are ordered best to worst by completion rate,
+then acceptance rate. No extra event fields are required.
+
 ## BQ10 — Location-Independent Mode Usage
 **Type 3**
 

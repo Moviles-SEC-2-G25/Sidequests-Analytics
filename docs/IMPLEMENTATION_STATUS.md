@@ -9,7 +9,13 @@
 - `analytics.user_features`.
 - `analytics.bq_results`.
 - Python/SQLAlchemy analytics engine skeleton with automated CI tests.
-- BQ9 query: category completion rate for accepted quests in the last 30 days.
+- BQ9 query (Type 3): per-category funnel over the last 30 days —
+  recommendation acceptance/skip rates from `recommendation_*` events, plus
+  completion, abandonment, median time to complete and average rating from
+  `user_quests`, each compared against the all-category average. Validated
+  on 2026-10-01 against hosted Supabase with real Flutter-generated data
+  (65 recommendation impressions, 20 quest attempts across 6 categories);
+  per-category totals reconcile with the raw `user_quests` status counts.
 - BQ6 base query: abandonment reason segmented by duration, cost and distance (bucket from the `quest_abandoned` event's `distance_meters`; Flutter emits it).
 - BQ5 shared runtime recommender implemented as the authenticated PostgreSQL RPC `public.recommend_quests`.
 - BQ5 validated end-to-end from the Kotlin app, including time filtering and immediate session-level “Not for me” exclusions.

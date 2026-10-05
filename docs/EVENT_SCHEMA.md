@@ -71,6 +71,40 @@ Events without these fields still count, under variant `unassigned`, with a
 `recommendation_accepted` needs no extra fields; BQ8 links it to the shown
 event by `user_id` + `session_id` + `quest_id`.
 
+## `recommendation_shown` social level (BQ5)
+
+BQ5 ranks by, among others, the user's preferred level of social
+interaction. Clients may let the user override the profile value for the
+current session only ("¿Cómo te sientes hoy?" in Flutter); the override is
+never written to `user_preferences`.
+
+- `social_level` column (`solo` | `social` | `group`): the social level
+  **actually sent** to `recommend_quests` for that list (session override if
+  any, else the profile's). Should be set on every `recommendation_shown`
+  event; BQ5 already reads it.
+- `metadata.social_level_source` (text, `session` | `profile`), optional.
+  `session` = the user picked it for this session; `profile` = taken from
+  `user_preferences`. **Absent means `profile`**, so clients without the
+  override (Kotlin today) need no change. Queries should read it as
+  `coalesce(metadata->>'social_level_source', 'profile')`.
+
+## `photo_proof_uploaded` (photo proof, Sidequests-Backend migration 009)
+
+Emitted once a step's photo proof is **registered**: uploaded to the private
+`quest-proofs` bucket AND its `quest_photo_proofs` row inserted (the success
+rule of `docs/API_CONTRACT.md` in Sidequests-Backend). Never on a failed or
+still-pending upload. `quest_id` and `category` columns are set.
+
+Flutter sends this `metadata` (**to be aligned with Kotlin**, which already
+emits the event per `docs/PHOTO_PROOF_VALIDATION.md` but whose keys are not
+documented here yet):
+
+- `attempt_id` (uuid string) — `user_quests.id`, same as `quest_photo_proofs.attempt_id`.
+- `step_order` (integer, zero-based) — same as `quest_photo_proofs.step_order`.
+- `was_retry` (boolean) — true when the photo had been kept on the device after a
+  failed upload (no connection) and this is a later retry.
+- `size_bytes` (integer) — size of the uploaded JPEG.
+
 ## `recommendation_accepted` / `quest_started` metadata contract (BQ4)
 
 BQ4 (instant plan adoption) compares the "instant plan" quick-start path
@@ -88,6 +122,15 @@ started:
 Clients should emit exactly one of `recommendation_accepted` /
 `quest_started` per quest start, with these three fields set.
 
+## BQ9 category performance events
+
+BQ9 needs no new event or metadata field. It uses the existing
+`recommendation_shown`, `recommendation_accepted` and `recommendation_skipped`
+events, and reads the category from `public.quests` through `quest_id`, so
+events that do not send `category` still count. For an accept or skip to be
+linked to its impression, it must carry the same `session_id` and `quest_id`
+as the `recommendation_shown` event. Completion and abandonment come from
+`public.user_quests`.
 
 ## BQ10 location mode events
 

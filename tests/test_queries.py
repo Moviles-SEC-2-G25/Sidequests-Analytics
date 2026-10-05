@@ -86,6 +86,27 @@ def test_bq9_targets_last_30_days_and_completion():
     assert "category" in sql
 
 
+def test_bq9_measures_recommendation_acceptance_per_category():
+    sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
+    assert "recommendation_shown" in sql
+    assert "recommendation_accepted" in sql
+    assert "recommendation_skipped" in sql
+    assert "session_id is not distinct from s.session_id" in sql
+    assert "recommendation_acceptance_rate_pct" in sql
+    assert "recommendation_skip_rate_pct" in sql
+
+
+def test_bq9_compares_categories_against_overall_baseline():
+    sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
+    assert "status <> 'skipped'" in sql
+    assert "abandonment_rate_pct" in sql
+    assert "resolved_completion_rate_pct" in sql
+    assert "median_minutes_to_complete" in sql
+    assert "acceptance_rate_vs_overall_pp" in sql
+    assert "completion_rate_vs_overall_pp" in sql
+    assert "order by\n    completion_rate_pct desc nulls last" in sql
+
+
 def test_bq6_uses_current_abandonment_sources():
     sql = BQ6_ABANDONMENT_BASE_SQL.lower()
     assert "abandon_reason" in sql
