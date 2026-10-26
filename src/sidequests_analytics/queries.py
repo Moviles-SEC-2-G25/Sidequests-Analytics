@@ -635,3 +635,118 @@ select
     completion_rate
 from per_user;
 """
+
+
+# Sprint 3 — Sebastián's BQ12: sponsored vs regular Sidequests.
+# IMPORTANT: The current schema has a quest activity category but does not contain
+# the sponsor's BUSINESS category. quest_category below is not a substitute.
+# Interest segments reflect the user's CURRENT declared preferences, not a
+# historical snapshot of those preferences at the original recommendation.
+BQ12_SPONSORED_QUEST_PERFORMANCE_SQL = """
+with impression_base as (
+    select distinct on (ae.user_id, ae.session_id, ae.quest_id)
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        ae.occurred_at as shown_at,
+        q.is_sponsored,
+        q.category as quest_category,
+        case
+            when cardinality(coalesce(up.interests, '{}'::text[])) = 0 then 'none_declared'
+            when exists (
+                select 1 from unnest(up.interests) interest
+                where lower(interest) = lower(q.category)
+                   or exists (
+                       select 1 from unnest(q.tags) tag
+                       where lower(tag) = lower(interest)
+                   )
+            ) then 'matching'
+            else 'not_matching'
+        end as interest_segment
+    from public.analytics_events ae
+    join public.quests q on q.id = ae.quest_id
+    left join public.user_preferences up on up.user_id = ae.user_id
+    where ae.event_type = 'recommendation_shown'
+      and ae.occurred_at >= now() - interval '30 days'
+      and ae.user_id is not null
+      and ae.quest_id is not null
+    order by ae.user_id, ae.session_id, ae.quest_id, ae.occurred_at
+),
+shown_summary as (
+    select
+        i.is_sponsored,
+        i.quest_category,
+        i.interest_segment,
+        count(*) as recommendation_impressions,
+        count(*) filter (
+            where exists (
+                select 1
+                from public.user_quests uq
+                where uq.user_id = i.user_id
+                  and uq.quest_id = i.quest_id
+                  and uq.accepted_at >= i.shown_at
+                  and uq.accepted_at < i.shown_at + interval '1 day'
+                  and uq.status <> 'skipped'
+            )
+        ) as accepted_recommendations
+    from impression_base i
+    group by i.is_sponsored, i.quest_category, i.interest_segment
+),
+attempt_base as (
+    select
+        q.is_sponsored,
+        q.category as quest_category,
+        uq.status,
+        case
+            when cardinality(coalesce(up.interests, '{}'::text[])) = 0 then 'none_declared'
+            when exists (
+                select 1 from unnest(up.interests) interest
+                where lower(interest) = lower(q.category)
+                   or exists (
+                       select 1 from unnest(q.tags) tag
+                       where lower(tag) = lower(interest)
+                   )
+            ) then 'matching'
+            else 'not_matching'
+        end as interest_segment
+    from public.user_quests uq
+    join public.quests q on q.id = uq.quest_id
+    left join public.user_preferences up on up.user_id = uq.user_id
+    where uq.accepted_at >= now() - interval '30 days'
+      and uq.status <> 'skipped'
+),
+attempt_summary as (
+    select
+        is_sponsored,
+        quest_category,
+        interest_segment,
+        count(*) as accepted_attempts,
+        count(*) filter (where status = 'completed') as completed_attempts,
+        count(*) filter (where status = 'abandoned') as abandoned_attempts
+    from attempt_base
+    group by is_sponsored, quest_category, interest_segment
+)
+select
+    coalesce(s.is_sponsored, a.is_sponsored) as is_sponsored,
+    coalesce(s.quest_category, a.quest_category) as quest_category,
+    coalesce(s.interest_segment, a.interest_segment) as interest_segment,
+    coalesce(s.recommendation_impressions, 0) as recommendation_impressions,
+    coalesce(s.accepted_recommendations, 0) as accepted_recommendations,
+    round(
+        100.0 * s.accepted_recommendations
+            / nullif(s.recommendation_impressions, 0), 2
+    ) as recommendation_acceptance_rate_pct,
+    coalesce(a.accepted_attempts, 0) as accepted_attempts,
+    coalesce(a.completed_attempts, 0) as completed_attempts,
+    coalesce(a.abandoned_attempts, 0) as abandoned_attempts,
+    round(
+        100.0 * a.completed_attempts
+            / nullif(a.accepted_attempts, 0), 2
+    ) as completion_rate_pct
+from shown_summary s
+full outer join attempt_summary a
+    on a.is_sponsored = s.is_sponsored
+   and a.quest_category = s.quest_category
+   and a.interest_segment = s.interest_segment
+order by is_sponsored desc, quest_category, interest_segment;
+"""
