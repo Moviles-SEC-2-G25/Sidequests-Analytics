@@ -651,6 +651,7 @@ with impression_base as (
         ae.occurred_at as shown_at,
         q.is_sponsored,
         q.category as quest_category,
+        q.sponsor_business_category,
         case
             when cardinality(coalesce(up.interests, '{}'::text[])) = 0 then 'none_declared'
             when exists (
@@ -676,6 +677,7 @@ shown_summary as (
     select
         i.is_sponsored,
         i.quest_category,
+        i.sponsor_business_category,
         i.interest_segment,
         count(*) as recommendation_impressions,
         count(*) filter (
@@ -691,12 +693,13 @@ shown_summary as (
             )
         ) as accepted_recommendations
     from impression_base i
-    group by i.is_sponsored, i.quest_category, i.interest_segment
+    group by i.is_sponsored, i.quest_category, i.sponsor_business_category, i.interest_segment
 ),
 attempt_base as (
     select
         q.is_sponsored,
         q.category as quest_category,
+        q.sponsor_business_category,
         uq.status,
         case
             when cardinality(coalesce(up.interests, '{}'::text[])) = 0 then 'none_declared'
@@ -720,16 +723,20 @@ attempt_summary as (
     select
         is_sponsored,
         quest_category,
+        sponsor_business_category,
         interest_segment,
         count(*) as accepted_attempts,
         count(*) filter (where status = 'completed') as completed_attempts,
         count(*) filter (where status = 'abandoned') as abandoned_attempts
     from attempt_base
-    group by is_sponsored, quest_category, interest_segment
+    group by is_sponsored, quest_category, sponsor_business_category, interest_segment
 )
 select
     coalesce(s.is_sponsored, a.is_sponsored) as is_sponsored,
     coalesce(s.quest_category, a.quest_category) as quest_category,
+    case when coalesce(s.is_sponsored, a.is_sponsored)
+         then coalesce(s.sponsor_business_category, a.sponsor_business_category, 'unclassified')
+         else 'not_sponsored' end as sponsor_business_category,
     coalesce(s.interest_segment, a.interest_segment) as interest_segment,
     coalesce(s.recommendation_impressions, 0) as recommendation_impressions,
     coalesce(s.accepted_recommendations, 0) as accepted_recommendations,
@@ -748,6 +755,7 @@ from shown_summary s
 full outer join attempt_summary a
     on a.is_sponsored = s.is_sponsored
    and a.quest_category = s.quest_category
+   and a.sponsor_business_category is not distinct from s.sponsor_business_category
    and a.interest_segment = s.interest_segment
 order by is_sponsored desc, quest_category, interest_segment;
 """
