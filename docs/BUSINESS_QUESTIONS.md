@@ -65,3 +65,24 @@ How is location-independent mode used across sessions/context conditions?
 ## Rule
 
 A BQ only counts for Sprint 2 when its logic is implemented and demonstrated against real analytics data; documentation alone is not sufficient.
+
+
+## Sprint 3 — BQ12 Sponsored Quest Performance (Sebastián, Type 4)
+
+**Original Sprint 1 question:** What is the acceptance and completion rate of sponsored Side-Quests compared with non-sponsored ones, segmented by business category and by the user's declared interests?
+
+**Why:** The team's proposed revenue model includes sponsored quests. We need evidence of whether sponsorship changes recommendations' attractiveness or users' likelihood of completing activities, without degrading relevance for students.
+
+**Current implemented computation (pending live validation):**
+- The `bq12` analytics job calculates 30-day recommendation acceptance rates from de-duplicated `recommendation_shown` impressions and actual `user_quests` acceptances occurring within one day of a recommendation.
+- It separately calculates completion rates from accepted quest attempts (`user_quests`), including quests accepted from Explore rather than recommendations.
+- Both metrics are grouped by sponsored versus ordinary quests, **quest activity category**, and declared-interest match (`matching`, `not_matching`, `none_declared`).
+- Results are stored in `analytics.bq_results` with `bq_key = 'BQ12'`, using the existing Python pipeline.
+
+**Limitations that MUST be resolved before marking the original BQ fully complete:**
+1. The existing `quests.category` is an **activity category**, NOT the sponsor's business category. The backend must explicitly model/populate sponsor business category if the full original segmentation is required.
+2. `user_preferences.interests` is the currently declared value, not a historical snapshot. The report must not claim interests were recorded at the time of the original interaction.
+3. The repository includes only one sponsored quest in its sample seed, which is insufficient to draw robust business conclusions.
+4. The pipeline is not yet demonstrated against hosted Supabase, nor is a Kotlin screen consuming the resulting analytics output. Documentation and CI cannot replace those demonstrations.
+
+**How to reproduce when connected:** Run `python -m sidequests_analytics.pipeline --job bq12` in a trusted server environment with `DATABASE_URL`, then inspect the latest `analytics.bq_results` BQ12 payload. Never put `DATABASE_URL` or a service-role key into a mobile client.
