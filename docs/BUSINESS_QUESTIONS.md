@@ -74,7 +74,7 @@ A BQ only counts for Sprint 2 when its logic is implemented and demonstrated aga
 **Why:** The team's proposed revenue model includes sponsored quests. We need evidence of whether sponsorship changes recommendations' attractiveness or users' likelihood of completing activities, without degrading relevance for students.
 
 **Current implemented computation (pending live validation):**
-- The `bq12` analytics job calculates 30-day recommendation acceptance rates from de-duplicated `recommendation_shown` impressions and actual `user_quests` acceptances occurring within one day of a recommendation.
+- The `bq12` analytics job calculates 30-day recommendation acceptance rates from de-duplicated `recommendation_shown` impressions and matching `quest_accepted` or `recommendation_accepted` events in the same session within one day of a recommendation.
 - It separately calculates completion rates from accepted quest attempts (`user_quests`), including quests accepted from Explore rather than recommendations.
 - Both metrics are grouped by sponsored versus ordinary quests, **quest activity category**, and declared-interest match (`matching`, `not_matching`, `none_declared`).
 - Results are stored in `analytics.bq_results` with `bq_key = 'BQ12'`, using the existing Python pipeline.
