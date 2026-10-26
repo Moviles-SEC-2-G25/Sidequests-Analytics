@@ -17,6 +17,8 @@ def test_bq12_compares_sponsored_and_other_quests():
     sql = BQ12_SPONSORED_QUEST_PERFORMANCE_SQL.lower()
     assert "q.is_sponsored" in sql
     assert "recommendation_shown" in sql
+    assert "accepted.event_type in ('quest_accepted', 'recommendation_accepted')" in sql
+    assert "accepted.session_id is not distinct from i.session_id" in sql
     assert "public.user_quests" in sql
     assert "recommendation_acceptance_rate_pct" in sql
     assert "completion_rate_pct" in sql
