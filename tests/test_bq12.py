@@ -28,6 +28,10 @@ def test_bq12_compares_sponsored_and_other_quests():
 
 def test_bq12_compares_declared_interests_without_exposing_user_ids():
     sql = BQ12_SPONSORED_QUEST_PERFORMANCE_SQL.lower()
+    assert "q.sponsor_business_category" in sql
+    assert "a.sponsor_business_category is not distinct from s.sponsor_business_category" in sql
+    assert "'unclassified'" in sql
+    assert "'not_sponsored'" in sql
     assert "public.user_preferences" in sql
     assert "unnest(up.interests)" in sql
     assert "interest_segment" in sql
