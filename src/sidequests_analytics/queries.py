@@ -681,12 +681,13 @@ shown_summary as (
         count(*) filter (
             where exists (
                 select 1
-                from public.user_quests uq
-                where uq.user_id = i.user_id
-                  and uq.quest_id = i.quest_id
-                  and uq.accepted_at >= i.shown_at
-                  and uq.accepted_at < i.shown_at + interval '1 day'
-                  and uq.status <> 'skipped'
+                from public.analytics_events accepted
+                where accepted.event_type in ('quest_accepted', 'recommendation_accepted')
+                  and accepted.user_id = i.user_id
+                  and accepted.session_id is not distinct from i.session_id
+                  and accepted.quest_id = i.quest_id
+                  and accepted.occurred_at >= i.shown_at
+                  and accepted.occurred_at < i.shown_at + interval '1 day'
             )
         ) as accepted_recommendations
     from impression_base i
