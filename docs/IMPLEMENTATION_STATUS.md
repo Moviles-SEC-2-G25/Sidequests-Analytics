@@ -67,3 +67,8 @@
 BQ5 currently lives in PostgreSQL as a shared RPC rather than an Edge Function. This is intentional for Sprint 2: both Kotlin and Flutter can call the same authenticated function through Supabase/PostgREST, so the ranking logic is not duplicated in the mobile clients. Moving it to an Edge Function later is optional and should only be done if context orchestration or external-service logic justifies the extra layer.
 
 The architecture diagrams must distinguish implemented-and-validated, implemented-but-not-deployed, and planned components.
+
+
+## Sprint 3 BQ12 (Sebastián) — branch implementation only
+
+The BQ12 query and Python pipeline registration have been authored on a separate feature branch. It compares sponsored vs non-sponsored quest activity, impression-based acceptance, and attempt-based completion, grouped by currently declared interests. This has **not** been tested live with the shared Supabase project or displayed in the Kotlin mobile app. The actual sponsor business category is not modeled in the current database schema, so the original BQ12 question remains partially unfulfilled. Do not report it as validated end-to-end.
