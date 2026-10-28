@@ -83,15 +83,17 @@ BQ9_CATEGORY_PERFORMANCE_SQL = """
 with shown as (
     -- one impression per user/session/quest: list reloads (filter changes,
     -- "Not for me") must not inflate the acceptance denominator
-    select distinct
+    select
         ae.user_id,
         ae.session_id,
         ae.quest_id,
-        q.category
+        q.category,
+        min(ae.occurred_at) as first_shown_at
     from public.analytics_events ae
     join public.quests q on q.id = ae.quest_id
     where ae.event_type = 'recommendation_shown'
       and ae.occurred_at >= now() - interval '30 days'
+    group by ae.user_id, ae.session_id, ae.quest_id, q.category
 ),
 shown_outcomes as (
     -- linked like BQ8: same user + session + quest
@@ -104,6 +106,8 @@ shown_outcomes as (
               and a.user_id = s.user_id
               and a.session_id is not distinct from s.session_id
               and a.quest_id = s.quest_id
+              and a.occurred_at >= s.first_shown_at
+              and a.occurred_at < s.first_shown_at + interval '1 day'
         ) as was_accepted,
         exists (
             select 1
@@ -112,6 +116,8 @@ shown_outcomes as (
               and k.user_id = s.user_id
               and k.session_id is not distinct from s.session_id
               and k.quest_id = s.quest_id
+              and k.occurred_at >= s.first_shown_at
+              and k.occurred_at < s.first_shown_at + interval '1 day'
         ) as was_skipped
     from shown s
 ),
