@@ -9,7 +9,7 @@ from .db import get_engine
 
 st.set_page_config(page_title="Sidequests Analytics", layout="wide")
 st.title("Sidequests · BQ Dashboard")
-st.caption("Sprint 2 analytics outputs stored in analytics.bq_results")
+st.caption("Shared Sprint 2 and Sprint 3 analytics results from the Sidequests database")
 
 engine = get_engine()
 
@@ -37,4 +37,26 @@ else:
         if isinstance(payload, str):
             payload = json.loads(payload)
         data = payload.get("rows", [])
-        st.dataframe(pd.DataFrame(data), use_container_width=True)
+        frame = pd.DataFrame(data)
+
+        if row["bq_key"] == "BQ9":
+            st.caption("BQ9 · Which quest categories are completed most often?")
+            if frame.empty:
+                st.info("No category activity has been recorded yet.")
+            elif {"category", "completion_rate_pct", "accepted_count", "completed_count"}.issubset(frame.columns):
+                category_rates = frame[
+                    ["category", "completion_rate_pct", "accepted_count", "completed_count"]
+                ].copy()
+                category_rates["Completion rate (%)"] = pd.to_numeric(
+                    category_rates["completion_rate_pct"], errors="coerce"
+                )
+                st.bar_chart(category_rates.set_index("category")[["Completion rate (%)"]])
+                st.caption(
+                    "Completion rate = completed quest attempts / accepted quest attempts "
+                    "for each activity category during the last 30 days. "
+                    "The table below also shows the sample sizes."
+                )
+            else:
+                st.warning("BQ9 is missing the fields needed for the completion chart.")
+
+        st.dataframe(frame, use_container_width=True)
