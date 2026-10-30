@@ -11,6 +11,7 @@ Implemented/selected Business Questions:
 - BQ3 — Onboarding Drop-off (Type 2)
 - BQ5 — Personalized Quest Recommendation (Type 2)
 - BQ6 — Quest Abandonment Reasons (Type 2)
+- BQ7 — Group vs Individual Quest Performance (Type 3)
 - BQ8 — Recommendation Diversity (Type 3)
 - BQ9 — Quest Category Performance (Type 3)
 - BQ10 — Location-Independent Mode Usage (Type 3)
