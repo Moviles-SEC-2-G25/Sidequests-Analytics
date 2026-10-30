@@ -96,6 +96,15 @@ def test_bq9_measures_recommendation_acceptance_per_category():
     assert "recommendation_skip_rate_pct" in sql
 
 
+def test_bq9_does_not_match_actions_before_or_long_after_recommendations():
+    sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
+    assert "min(ae.occurred_at) as first_shown_at" in sql
+    assert "a.occurred_at >= s.first_shown_at" in sql
+    assert "a.occurred_at < s.first_shown_at + interval '1 day'" in sql
+    assert "k.occurred_at >= s.first_shown_at" in sql
+    assert "k.occurred_at < s.first_shown_at + interval '1 day'" in sql
+
+
 def test_bq9_compares_categories_against_overall_baseline():
     sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
     assert "status <> 'skipped'" in sql
