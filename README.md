@@ -5,7 +5,7 @@ Shared analytics engine for the Sidequests Kotlin and Flutter applications.
 Both mobile clients write the same event contract into the shared Supabase backend.
 This repository owns the Business Question logic, recommendation analytics and pipeline documentation.
 
-## Initial Sprint 2 scope
+## Implemented and selected Business Questions
 
 Implemented/selected Business Questions:
 - BQ3 — Onboarding Drop-off (Type 2)
