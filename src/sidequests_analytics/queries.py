@@ -611,6 +611,105 @@ order by
 """
 
 
+
+BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL = """
+with quest_types(quest_type, is_group) as (
+    values
+        ('group', true),
+        ('individual', false)
+),
+attempts as (
+    select
+        uq.id,
+        uq.user_id,
+        case when q.is_group then 'group' else 'individual' end as quest_type,
+        uq.status,
+        uq.accepted_at,
+        uq.completed_at,
+        uq.rating
+    from public.user_quests uq
+    join public.quests q on q.id = uq.quest_id
+    where uq.accepted_at >= now() - interval '30 days'
+      and uq.status <> 'skipped'
+),
+type_metrics as (
+    select
+        quest_type,
+        count(*) as accepted_attempts,
+        count(distinct user_id) as adopting_users,
+        count(*) filter (where status = 'completed') as completed_attempts,
+        count(*) filter (where status = 'abandoned') as abandoned_attempts,
+        count(*) filter (where status in ('accepted', 'in_progress')) as open_attempts,
+        round(
+            (
+                percentile_cont(0.5) within group (
+                    order by extract(epoch from (completed_at - accepted_at)) / 60
+                ) filter (where status = 'completed' and completed_at is not null)
+            )::numeric,
+            1
+        ) as median_minutes_to_complete,
+        round(avg(rating) filter (where status = 'completed'), 2) as average_rating
+    from attempts
+    group by quest_type
+),
+user_adoption as (
+    select
+        user_id,
+        bool_or(quest_type = 'group') as has_group_quest,
+        bool_or(quest_type = 'individual') as has_individual_quest
+    from (
+        select distinct user_id, quest_type
+        from attempts
+    ) user_quest_types
+    group by user_id
+),
+adoption_summary as (
+    select
+        count(*) as users_with_any_quest,
+        count(*) filter (where has_group_quest and has_individual_quest) as users_with_both_types,
+        count(*) filter (where has_group_quest and not has_individual_quest) as group_only_users,
+        count(*) filter (where has_individual_quest and not has_group_quest) as individual_only_users
+    from user_adoption
+)
+select
+    qt.quest_type,
+    coalesce(tm.adopting_users, 0) as adopting_users,
+    coalesce(tm.accepted_attempts, 0) as accepted_attempts,
+    coalesce(tm.completed_attempts, 0) as completed_attempts,
+    coalesce(tm.abandoned_attempts, 0) as abandoned_attempts,
+    coalesce(tm.open_attempts, 0) as open_attempts,
+    round(
+        100.0 * coalesce(tm.adopting_users, 0)
+        / nullif(ads.users_with_any_quest, 0),
+        2
+    ) as adoption_share_pct,
+    round(
+        100.0 * coalesce(tm.completed_attempts, 0)
+        / nullif(tm.accepted_attempts, 0),
+        2
+    ) as completion_rate_pct,
+    round(
+        100.0 * coalesce(tm.completed_attempts, 0)
+        / nullif(tm.completed_attempts + tm.abandoned_attempts, 0),
+        2
+    ) as resolved_completion_rate_pct,
+    round(
+        100.0 * coalesce(tm.abandoned_attempts, 0)
+        / nullif(tm.accepted_attempts, 0),
+        2
+    ) as abandonment_rate_pct,
+    tm.median_minutes_to_complete,
+    tm.average_rating,
+    ads.users_with_any_quest,
+    ads.users_with_both_types,
+    ads.group_only_users,
+    ads.individual_only_users
+from quest_types qt
+left join type_metrics tm using (quest_type)
+cross join adoption_summary ads
+order by case qt.quest_type when 'group' then 1 else 2 end;
+"""
+
 USER_FEATURES_SQL = """
 with per_user as (
     select
