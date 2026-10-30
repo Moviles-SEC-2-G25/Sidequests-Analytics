@@ -26,6 +26,7 @@
   `BQ8_RECOMMENDATION_DIVERSITY_SQL` and the `bq8` pipeline job compute
   per-variant/week diversity metrics.
 - Minimal Streamlit dashboard code for stored BQ outputs.
+- BQ7 query and `bq7` pipeline job: compares adoption and completion of group-labelled versus individual quests over the last 30 days, using `quests.is_group` and `user_quests`. The output explicitly distinguishes quest classification from verified group participation, which is not represented in the current schema.
 - BQ10 query and bq10 pipeline job: session-level location-independent usage with time-of-day and weather breakdowns.
 
 ## Implemented in code but not yet deployed end-to-end
