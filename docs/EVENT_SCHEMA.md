@@ -122,6 +122,18 @@ started:
 Clients should emit exactly one of `recommendation_accepted` /
 `quest_started` per quest start, with these three fields set.
 
+## BQ7 group and individual quest comparison
+
+BQ7 requires no additional analytics event. It classifies accepted attempts
+from `public.user_quests` by the related `public.quests.is_group` value:
+
+- `true`: group-labelled quest.
+- `false`: individual quest.
+
+The current schema does not store group membership, participant identifiers,
+or group-session lifecycle events. The metric must not be described as verified
+group participation until those records exist.
+
 ## BQ9 category performance events
 
 BQ9 needs no new event or metadata field. It uses the existing

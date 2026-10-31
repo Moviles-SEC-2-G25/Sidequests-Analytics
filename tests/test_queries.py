@@ -9,6 +9,7 @@ from sidequests_analytics.queries import (
     BQ4_INSTANT_PLAN_SQL,
     BQ5_PERSONALIZED_RECOMMENDATION_SQL,
     BQ6_ABANDONMENT_BASE_SQL,
+    BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
@@ -152,6 +153,43 @@ def test_bq10_measures_location_independent_usage_by_session_and_context():
     assert "30 days" in sql
     assert "from results" in sql
     assert "case when time_of_day = 'overall' then 0 else 1 end" in sql
+
+
+
+def test_bq7_compares_group_and_individual_quest_adoption():
+    sql = BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL.lower()
+    assert "public.user_quests" in sql
+    assert "public.quests" in sql
+    assert "q.is_group" in sql
+    assert "'group'" in sql
+    assert "'individual'" in sql
+    assert "adopting_users" in sql
+    assert "adoption_share_pct" in sql
+
+
+def test_bq7_reports_completion_and_abandonment_metrics():
+    sql = BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL.lower()
+    assert "completed_attempts" in sql
+    assert "abandoned_attempts" in sql
+    assert "open_attempts" in sql
+    assert "completion_rate_pct" in sql
+    assert "resolved_completion_rate_pct" in sql
+    assert "abandonment_rate_pct" in sql
+    assert "median_minutes_to_complete" in sql
+    assert "average_rating" in sql
+
+
+def test_bq7_reports_users_who_choose_both_quest_types():
+    sql = BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL.lower()
+    assert "users_with_both_types" in sql
+    assert "group_only_users" in sql
+    assert "individual_only_users" in sql
+
+
+def test_bq7_uses_a_30_day_window_and_excludes_skipped_attempts():
+    sql = BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL.lower()
+    assert "30 days" in sql
+    assert "status <> 'skipped'" in sql
 
 
 def test_bq1_uses_resume_and_failure_events_from_kotlin():

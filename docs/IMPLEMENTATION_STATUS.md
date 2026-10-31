@@ -44,6 +44,8 @@
   project (needs a signed-in account completing onboarding in a deployed
   build, then a pipeline run to confirm output in `analytics.bq_results`).
 
+- BQ7 query and `bq7` pipeline job: compares adoption and completion of group-labelled versus individual quests over the last 30 days, using `quests.is_group` and `user_quests`. The output explicitly distinguishes quest classification from verified group participation, which is not represented in the current schema.
+
 ## Planned / incomplete
 
 - Scheduled deployment of the Python pipeline.

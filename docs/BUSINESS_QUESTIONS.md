@@ -36,6 +36,22 @@ Runtime ranking is provided by the shared authenticated `public.recommend_quests
 
 Which quest/context characteristics are most associated with users abandoning a quest?
 
+## BQ7 — Group vs Individual Quest Performance
+**Type 3**
+
+How do adoption and completion compare between quests marked as group quests and individual quests?
+
+Computed over the last 30 days from accepted attempts in `public.user_quests`,
+classified through `public.quests.is_group`. Reports adopting users, accepted
+attempts, completed, abandoned and open attempts, adoption share among users
+with any accepted quest, completion and abandonment rates, median completion
+time, average rating, and the overlap between users who accepted both types.
+
+The current schema records a quest's group classification but does not record
+group membership or participant sessions. Therefore, BQ7 measures engagement
+with quests labelled as group quests, not verified participation in a shared
+group. This limitation must remain explicit in Sprint 3 evidence.
+
 ## BQ8 — Recommendation Diversity
 **Type 3**
 
