@@ -4,9 +4,13 @@ BQ9 is a Type 3 per-category funnel. Acceptance comes from
 `recommendation_shown` / `recommendation_accepted` / `recommendation_skipped`
 events (linked by user + session + quest, like BQ8); completion and abandonment
 come from `user_quests` attempts. No extra metadata contract is needed.
-BQ6 covers abandonment reason, duration, cost and distance. Distance comes from
-the `quest_abandoned` analytics event (distance_meters, sent by Flutter's
-Context Manager); abandonments without a matching event fall in 'unknown'.
+BQ6 covers abandonment reason, duration, cost and distance, per platform. Reason
+codes are normalized to Kotlin's, and distance comes from the `quest_abandoned`
+event linked by attempt_id. The two platforms measure distance differently:
+Kotlin uses the catalogue distance and Flutter the GPS distance from the user to
+the quest (`quest_distance_source`), so a shared band doesn't mean a shared
+measurement. Events without a band get `legacy_gps_*` buckets, and abandonments
+without a matching event fall in 'unknown'.
 BQ3 v2 uses explicit step views/completions/skips and first-recommendation
 exposure/acceptance events. The Python aggregation preserves pending outcomes
 and excludes legacy events that cannot establish the second half of BQ3.
@@ -241,37 +245,94 @@ order by s.user_id, s.session_id, s.rank_position;
 """
 
 BQ6_ABANDONMENT_BASE_SQL = """
+with attempts as (
+    select
+        -- Old Flutter codes count as Kotlin's. A null reason stays apart: it's
+        -- unknown data, not a user who chose "other".
+        case uq.abandon_reason
+            when 'place_closed' then 'place_unavailable'
+            when 'too_hard' then 'too_difficult'
+            when 'bad_weather' then 'weather_or_mood_changed'
+            when 'lost_interest' then 'other'
+            when 'not_specified' then 'other'
+            else coalesce(uq.abandon_reason, 'Unspecified')
+        end as abandon_reason,
+        q.duration_minutes,
+        q.estimated_cost,
+        ev.distance_meters,
+        ev.metadata
+    from public.user_quests uq
+    join public.quests q on q.id = uq.quest_id
+    left join lateral (
+        -- This attempt's quest_abandoned event, by attempt_id. Old events don't
+        -- have one and fall back to the closest in time, but an event naming
+        -- another attempt is never this attempt's.
+        select ae.distance_meters, ae.metadata
+        from public.analytics_events ae
+        where ae.event_type = 'quest_abandoned'
+          and ae.user_id = uq.user_id
+          and ae.quest_id = uq.quest_id
+          and (
+              ae.metadata->>'attempt_id' is null
+              or ae.metadata->>'attempt_id' = cast(uq.id as text)
+          )
+        order by
+            (ae.metadata->>'attempt_id') is not null desc,
+            -- user_quests keeps the first abandoned_at if an attempt is resumed
+            -- and abandoned again: for its own events, the latest one counts.
+            case when ae.metadata->>'attempt_id' is not null then ae.occurred_at end desc nulls last,
+            abs(extract(epoch from (ae.occurred_at - uq.abandoned_at))) nulls last,
+            ae.id desc
+        limit 1
+    ) ev on true
+    where uq.status = 'abandoned'
+),
+classified as (
+    select
+        abandon_reason,
+        duration_minutes,
+        estimated_cost,
+        -- Kotlin measures the catalogue distance and Flutter the GPS distance
+        -- from the user to the quest (see distance_source). Events without a band
+        -- are older and only had distance_meters: GPS for Flutter, so they stay
+        -- in their own legacy_gps_* buckets instead of mixing with the bands.
+        coalesce(
+            nullif(metadata->>'quest_distance_band', ''),
+            case
+                when distance_meters is null then 'unknown'
+                when distance_meters < 500 then 'legacy_gps_under_500_m'
+                when distance_meters < 2000 then 'legacy_gps_500_m_to_2_km'
+                when distance_meters < 10000 then 'legacy_gps_2_km_to_10_km'
+                else 'legacy_gps_over_10_km'
+            end
+        ) as distance_bucket,
+        -- Flutter says so. Kotlin doesn't send it, but only its contract has
+        -- schema_version; 'step' only exists on old Flutter events.
+        coalesce(
+            metadata->>'platform',
+            case
+                when metadata ? 'schema_version' then 'kotlin'
+                when metadata ? 'step' then 'flutter'
+                else 'unknown'
+            end
+        ) as platform,
+        metadata->>'quest_distance_source' as distance_source
+    from attempts
+)
 select
-    coalesce(uq.abandon_reason, 'Unspecified') as abandon_reason,
-    q.duration_minutes,
-    q.estimated_cost,
-    case
-        when ev.distance_meters is null then 'unknown'
-        when ev.distance_meters < 500 then '<500m'
-        when ev.distance_meters < 2000 then '500m-2km'
-        when ev.distance_meters < 10000 then '2-10km'
-        else '>10km'
-    end as distance_bucket,
+    abandon_reason,
+    duration_minutes,
+    estimated_cost,
+    distance_bucket,
+    platform,
+    coalesce(
+        distance_source,
+        case platform when 'kotlin' then 'catalogue' when 'flutter' then 'gps' else 'unknown' end
+    ) as distance_source,
     count(*) as abandoned_count
-from public.user_quests uq
-join public.quests q on q.id = uq.quest_id
-left join lateral (
-    -- the quest_abandoned event emitted when this user abandoned this quest
-    select ae.distance_meters
-    from public.analytics_events ae
-    where ae.event_type = 'quest_abandoned'
-      and ae.user_id = uq.user_id
-      and ae.quest_id = uq.quest_id
-    order by abs(extract(epoch from (ae.occurred_at - uq.abandoned_at)))
-    limit 1
-) ev on true
-where uq.status = 'abandoned'
-group by
-    coalesce(uq.abandon_reason, 'Unspecified'),
-    q.duration_minutes,
-    q.estimated_cost,
-    distance_bucket
-order by abandoned_count desc, abandon_reason;
+from classified
+group by 1, 2, 3, 4, 5, 6
+order by abandoned_count desc, abandon_reason, distance_bucket, platform;
 """
 
 BQ8_RECOMMENDATION_DIVERSITY_SQL = """

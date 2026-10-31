@@ -16,7 +16,7 @@
   on 2026-10-01 against hosted Supabase with real Flutter-generated data
   (65 recommendation impressions, 20 quest attempts across 6 categories);
   per-category totals reconcile with the raw `user_quests` status counts.
-- BQ6 base query: abandonment reason segmented by duration, cost and distance (bucket from the `quest_abandoned` event's `distance_meters`; Flutter emits it).
+- BQ6 base query, cross-platform: abandonment reason segmented by duration, cost, distance band and platform. Old Flutter reason codes are normalized to Kotlin's, events are linked by `attempt_id` with time as the fallback for old data, and events without a band use `legacy_gps_*` buckets. Kotlin's distance comes from the catalogue and Flutter's from GPS (`quest_distance_source`); see `docs/EVENT_SCHEMA.md`. `tests/test_bq6_postgres.py` runs the query against a throwaway PostgreSQL cluster with events of both platforms. Not yet run against hosted Supabase with the new Flutter contract.
 - BQ5 shared runtime recommender implemented as the authenticated PostgreSQL RPC `public.recommend_quests`.
 - BQ5 validated end-to-end from the Kotlin app, including time filtering and immediate session-level “Not for me” exclusions.
 - BQ8 recommendation-diversity experiment (Type 3). Backend migration 008 is

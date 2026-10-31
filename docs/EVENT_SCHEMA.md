@@ -13,6 +13,8 @@ Both Kotlin and Flutter must emit the same event names and compatible dimensions
 - `quest_completed`
 - `location_independent_mode_selected`
 - `location_based_mode_selected`
+- `quest_alternative_shown`
+- `quest_alternative_selected`
 
 ## Stored dimensions
 
@@ -149,6 +151,80 @@ Both events store the selected value in the `location_mode` column and include
 
 The query counts each session once. A session is considered
 location-independent when it selected the independent mode at least once.
+
+## BQ6 abandonment contract (`quest_abandoned`)
+
+Abandonment means the user chose to leave the attempt for good. Saving progress
+to come back later is not abandonment and sends no `quest_abandoned`.
+
+`user_quests.abandon_reason` and `metadata.reason_code` hold one of these stable
+codes. Labels may change or be translated without affecting BQ6:
+
+- `ran_out_of_time`
+- `too_far`
+- `too_expensive`
+- `place_unavailable`
+- `too_difficult`
+- `weather_or_mood_changed`
+- `other` — also the value when the user picks no reason
+
+Older Flutter data used other codes. BQ6 counts `place_closed` as
+`place_unavailable`, `too_hard` as `too_difficult`, `bad_weather` as
+`weather_or_mood_changed`, and `lost_interest` and `not_specified` as `other`.
+A null `abandon_reason` stays `Unspecified`: it's unknown data, not a choice.
+
+`metadata` includes:
+
+- `schema_version` (integer, currently `1`)
+- `reason` and `reason_code` (the code above), `reason_label` (display text)
+- `attempt_id` (uuid string) — `user_quests.id`; BQ6 links the event by it
+- `quest_duration_minutes` and `estimated_cost`
+- `quest_distance_label` (display text), optional `quest_distance_meters` and
+  `quest_distance_band`
+- `current_step_index`, `completed_step_count`, `total_step_count`,
+  `progress_percent`
+- `had_photo_proof` (boolean) and `uploaded_photo_proof_count`
+- Flutter only: `platform` (`flutter`) and `quest_distance_source` (`gps`)
+
+### Distance is measured differently on each platform
+
+| | Kotlin | Flutter |
+| --- | --- | --- |
+| `quest_distance_meters` | Normalized catalogue label | GPS distance from the user to the quest at the moment of abandoning |
+| `quest_distance_source` | Absent, read as `catalogue` | `gps` |
+| `distance_meters` column | Same catalogue distance | Same GPS distance |
+
+Both use the same bands: `location_independent`, `under_500_m` (below 500 m),
+`500_m_to_1_5_km` (below 1,500 m), `over_1_5_km` and `unknown`. Kotlin also has
+`on_campus`. A shared band therefore means the same range, not the same
+measurement, so compare platforms with `distance_source` in view.
+
+Events from before this contract have no band. BQ6 places them in
+`legacy_gps_under_500_m`, `legacy_gps_500_m_to_2_km`, `legacy_gps_2_km_to_10_km`
+or `legacy_gps_over_10_km`, kept apart from the bands above. Old Kotlin events
+without a band would land there too, since nothing tells them apart.
+
+### Platform
+
+Kotlin doesn't send `platform` on these events. BQ6 reads it from
+`metadata.platform`, then takes `schema_version` without it as `kotlin` and the
+old `step` key as `flutter`; anything else, or no event at all, is `unknown`.
+
+## Alternatives after abandoning (`quest_alternative_shown` / `quest_alternative_selected`)
+
+After an abandonment both apps can offer alternatives. `shown` is one event per
+suggestion displayed; `selected` means opening the quest's details, never
+accepting it. The `quest_id` column is the suggested quest. `metadata` includes:
+
+- `algorithm_version` (`lex_alternatives_v1`)
+- `source_quest_id`, `source_attempt_id` and `reason_code`
+- `rank` (1-based), `score`, `applied_rules` (comma-separated rule codes)
+- `time_of_day`, `weather_condition` (`unknown` when not available)
+- `context_source` (`device`, or `simulated_debug` in Kotlin debug scenarios)
+- Flutter only: `platform` (`flutter`)
+
+These events carry no coordinates. `docs/BQ6_ALTERNATIVES_VALIDATION.sql` checks
+them against the source attempt on both platforms.
 
 ## BQ1 resume and module failure events (Kotlin, Sprint 3)
 

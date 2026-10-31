@@ -45,6 +45,8 @@ Runtime ranking is provided by the shared authenticated `public.recommend_quests
 
 Which quest/context characteristics are most associated with users abandoning a quest?
 
+Reports abandoned attempts by reason, duration, cost, distance band and platform. Both clients share the reason codes and the bands, but Kotlin's distance comes from the catalogue and Flutter's from GPS. See `docs/EVENT_SCHEMA.md` for the event contract.
+
 ## BQ7 — Group vs Individual Quest Performance
 **Type 3**
 
