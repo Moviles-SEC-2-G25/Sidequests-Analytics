@@ -127,6 +127,28 @@ def test_bq6_segments_by_distance_from_abandon_events():
     assert "distance_bucket" in sql
 
 
+def test_bq6_normalizes_old_flutter_reason_codes_to_kotlin():
+    sql = BQ6_ABANDONMENT_BASE_SQL
+    for old, new in [
+        ("place_closed", "place_unavailable"),
+        ("too_hard", "too_difficult"),
+        ("bad_weather", "weather_or_mood_changed"),
+        ("lost_interest", "other"),
+        ("not_specified", "other"),
+    ]:
+        assert f"when '{old}' then '{new}'" in sql
+    assert "coalesce(uq.abandon_reason, 'Unspecified')" in sql
+
+
+def test_bq6_links_events_by_attempt_and_prefers_the_shared_band():
+    sql = BQ6_ABANDONMENT_BASE_SQL
+    assert "ae.metadata->>'attempt_id' = cast(uq.id as text)" in sql
+    assert "metadata->>'quest_distance_band'" in sql
+    assert "legacy_gps_" in sql
+    assert "quest_distance_source" in sql
+    assert "metadata->>'platform'" in sql
+
+
 def test_user_features_are_per_user():
     sql = USER_FEATURES_SQL.lower()
     assert "group by uq.user_id" in sql
