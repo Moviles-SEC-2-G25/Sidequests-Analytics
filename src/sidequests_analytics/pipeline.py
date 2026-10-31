@@ -6,6 +6,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from .db import get_engine
+from .bq3 import summarize_bq3
 from .queries import (
     BQ1_MODULE_FAILURES_AFTER_RESUME_SQL,
     BQ3_ONBOARDING_DROPOFF_SQL,
@@ -29,8 +30,9 @@ def compute_bq1(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ1_MODULE_FAILURES_AFTER_RESUME_SQL), engine))
 
 
-def compute_bq3(engine) -> list[dict]:
-    return _records(pd.read_sql(text(BQ3_ONBOARDING_DROPOFF_SQL), engine))
+def compute_bq3(engine, observation_hours=24.0, as_of=None) -> list[dict]:
+    records = pd.read_sql(text(BQ3_ONBOARDING_DROPOFF_SQL), engine).to_dict(orient="records")
+    return summarize_bq3(records, observation_hours=observation_hours, as_of=as_of)
 
 
 def compute_bq4(engine) -> list[dict]:
@@ -120,6 +122,8 @@ def store_bq_result(engine, bq_key: str, payload: list[dict]) -> None:
 
 def run() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--bq3-observation-hours", type=float, default=24.0,
+                        help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
         choices=("all", "bq1", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "features"),
@@ -139,7 +143,7 @@ def run() -> None:
         print(f"stored BQ1 rows: {len(bq1)}")
 
     if args.job in ("all", "bq3"):
-        bq3 = compute_bq3(engine)
+        bq3 = compute_bq3(engine, observation_hours=args.bq3_observation_hours)
         store_bq_result(engine, "BQ3", bq3)
         print(f"stored BQ3 rows: {len(bq3)}")
 

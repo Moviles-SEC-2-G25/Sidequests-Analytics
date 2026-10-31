@@ -37,21 +37,13 @@ The shared `analytics_events` table currently supports:
 
 The clients should only send data required by the Business Questions and product behavior.
 
-## `onboarding_step_completed` metadata contract (BQ3)
+## BQ3 v2: initial onboarding and first recommendation
 
-No onboarding step taxonomy exists in the backend today, so BQ3 (onboarding
-drop-off) defines this contract here. `analytics_events.metadata` must include:
-
-- `step_order` (integer, 1-based) — the step's position in the canonical
-  onboarding sequence. Required; events without it are ignored by BQ3.
-- `step_name` (text) — a human-readable label for the step (e.g. `"welcome"`,
-  `"permissions"`, `"interests"`). Used only for display.
-
-`session_id` is also required on these events: BQ3 measures drop-off per
-onboarding attempt (session), not per user account, so a session without an
-id cannot be placed in the funnel. Clients should emit one
-`onboarding_step_completed` event per completed step, in order, without
-skipping `step_order` values.
+Sprint 3 Kotlin implements the versioned contract in [BQ3_V2.md](BQ3_V2.md).
+It includes explicit step views, completions, skips, completion, and an exactly
+linked first-recommendation exposure and acceptance. Legacy completions alone
+cannot establish either first-step exits or recommendation acceptance and are
+excluded from the v2 result. They remain stored; no historical rows are changed.
 
 ## `recommendation_shown` metadata contract (BQ8)
 

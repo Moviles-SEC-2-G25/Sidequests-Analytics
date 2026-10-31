@@ -26,6 +26,12 @@
   `BQ8_RECOMMENDATION_DIVERSITY_SQL` and the `bq8` pipeline job compute
   per-variant/week diversity metrics.
 - Minimal Streamlit dashboard code for stored BQ outputs.
+- BQ3 v2 for Kotlin: four-step onboarding drop-off and exactly linked first-quest
+  acceptance, deduplicated by stable event IDs. Real Kotlin sources, Python batch
+  execution, the stored result and the local Streamlit dashboard were verified
+  with an explicitly labelled five-minute demonstration on 2026-10-29. This does
+  not establish hosted dashboard deployment or a matured 24-hour result. See
+  [BQ3_V2.md](BQ3_V2.md).
 - BQ10 query and bq10 pipeline job: session-level location-independent usage with time-of-day and weather breakdowns.
 
 ## Implemented in code but not yet deployed end-to-end
@@ -33,16 +39,10 @@
 - Python batch pipeline execution against the hosted Supabase database.
 - Streamlit dashboard hosting.
 - Refresh of `analytics.user_features` by the Python pipeline.
-- BQ3 query: session-level onboarding funnel drop-off, ranked by step. Defines
-  a `step_order`/`step_name` metadata contract (see EVENT_SCHEMA.md). Flutter
-  emits `onboarding_step_completed` per this contract (two steps: welcome,
-  preferences) with a stable per-app-session `session_id`; payload shape
-  (`step_order` int, `step_name` string, snake_case, `user_id` absent at that
-  layer/stamped downstream) is locked down by Flutter unit tests. Backend
-  RLS/schema confirmed to need no change. Not yet promoted to "validated"
-  because it has not been run as a live insert against a real Supabase
-  project (needs a signed-in account completing onboarding in a deployed
-  build, then a pipeline run to confirm output in `analytics.bq_results`).
+- Flutter BQ3 legacy events contain only two step completions. They cannot
+  establish the full initial-setup funnel or first-recommendation acceptance and
+  are excluded from the Kotlin v2 result. Flutter needs compatible versioned
+  instrumentation before it can be included; historical rows are not changed.
 
 - BQ7 query and `bq7` pipeline job: compares adoption and completion of group-labelled versus individual quests over the last 30 days, using `quests.is_group` and `user_quests`. The output explicitly distinguishes quest classification from verified group participation, which is not represented in the current schema.
 
@@ -50,7 +50,7 @@
 
 - Scheduled deployment of the Python pipeline.
 - Dedicated least-privilege ETL database role.
-- Kotlin emission of `onboarding_step_completed` (Flutter side is done; Kotlin has no onboarding flow instrumented yet).
+- Matured 24-hour BQ3 validation, beyond the verified five-minute demonstration.
 - BQ4 query: instant-plan vs standard start-path comparison. Defines a
   `start_path`/`seconds_to_start`/`interactions_to_start` metadata contract
   (see EVENT_SCHEMA.md). No client emits it yet, so the query has only been

@@ -15,7 +15,16 @@ Computed by `BQ1_MODULE_FAILURES_AFTER_RESUME_SQL` (last 30 days) and stored as 
 ## BQ3 — Onboarding Drop-off
 **Type 2**
 
-Which onboarding step has the highest abandonment/drop-off rate?
+At which step of the initial preference setup do users most frequently abandon
+the process, and how does completing each step relate to acceptance of their
+first recommended Side-Quest?
+
+Sprint 3 Kotlin v2 measures all four steps, distinguishes explicit Skip from
+inferred inactivity, and compares first-recommendation acceptance between step
+completers and non-completers. The normal observation horizon is 24 hours;
+recent exposures remain pending. See [BQ3_V2.md](BQ3_V2.md) for the event contract,
+denominators and live demonstration status. These are observational associations,
+not causal effects of completing a step.
 
 ## BQ4 — Instant Plan Adoption
 **Type 2**
