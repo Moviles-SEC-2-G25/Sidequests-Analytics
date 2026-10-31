@@ -8,10 +8,12 @@ from sqlalchemy import text
 from .db import get_engine
 from .bq3 import summarize_bq3
 from .queries import (
+    BQ1_MODULE_FAILURES_AFTER_RESUME_SQL,
     BQ3_ONBOARDING_DROPOFF_SQL,
     BQ4_INSTANT_PLAN_SQL,
     BQ5_PERSONALIZED_RECOMMENDATION_SQL,
     BQ6_ABANDONMENT_BASE_SQL,
+    BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
@@ -24,6 +26,10 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return clean.to_dict(orient="records")
 
 
+def compute_bq1(engine) -> list[dict]:
+    return _records(pd.read_sql(text(BQ1_MODULE_FAILURES_AFTER_RESUME_SQL), engine))
+
+
 def compute_bq3(engine, observation_hours=24.0, as_of=None) -> list[dict]:
     records = pd.read_sql(text(BQ3_ONBOARDING_DROPOFF_SQL), engine).to_dict(orient="records")
     return summarize_bq3(records, observation_hours=observation_hours, as_of=as_of)
@@ -31,6 +37,10 @@ def compute_bq3(engine, observation_hours=24.0, as_of=None) -> list[dict]:
 
 def compute_bq4(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ4_INSTANT_PLAN_SQL), engine))
+
+
+def compute_bq7(engine) -> list[dict]:
+    return _records(pd.read_sql(text(BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL), engine))
 
 
 def compute_bq8(engine) -> list[dict]:
@@ -116,7 +126,7 @@ def run() -> None:
                         help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
-        choices=("all", "bq3", "bq4", "bq5", "bq6", "bq8", "bq9", "bq10", "features"),
+        choices=("all", "bq1", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "features"),
         default="all",
     )
     args = parser.parse_args()
@@ -126,6 +136,11 @@ def run() -> None:
     if args.job in ("all", "features"):
         refreshed = refresh_user_features(engine)
         print(f"refreshed user_features: {refreshed}")
+
+    if args.job in ("all", "bq1"):
+        bq1 = compute_bq1(engine)
+        store_bq_result(engine, "BQ1", bq1)
+        print(f"stored BQ1 rows: {len(bq1)}")
 
     if args.job in ("all", "bq3"):
         bq3 = compute_bq3(engine, observation_hours=args.bq3_observation_hours)
@@ -146,6 +161,12 @@ def run() -> None:
         bq6 = compute_bq6_base(engine)
         store_bq_result(engine, "BQ6", bq6)
         print(f"stored BQ6 rows: {len(bq6)}")
+
+
+    if args.job in ("all", "bq7"):
+        bq7 = compute_bq7(engine)
+        store_bq_result(engine, "BQ7", bq7)
+        print(f"stored BQ7 rows: {len(bq7)}")
 
     if args.job in ("all", "bq8"):
         bq8 = compute_bq8(engine)

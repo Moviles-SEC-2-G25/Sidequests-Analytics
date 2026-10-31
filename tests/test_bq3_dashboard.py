@@ -54,3 +54,29 @@ def test_connection_helper_encodes_special_password_characters_without_manual_ed
     assert url.password == "test/p@ss:?#%"
     assert "%2F" in url.render_as_string(hide_password=False)
     assert url.query["sslmode"] == "require"
+
+
+def test_shared_dashboard_keeps_bq1_and_bq9_charts_with_bq3(monkeypatch):
+    from sidequests_analytics import db
+    from sidequests_analytics.bq3 import summarize_bq3
+    stored = pd.DataFrame([
+        dict(bq_key="BQ1", computed_at="fixture", payload={"rows": [
+            dict(module="context", failure_rate_pct=25, app_version="0.2.0")
+        ]}),
+        dict(bq_key="BQ3", computed_at="fixture", payload={"rows": summarize_bq3([])}),
+        dict(bq_key="BQ9", computed_at="fixture", payload={"rows": [
+            dict(category="Outdoors", completion_rate_pct=50, accepted_count=2, completed_count=1)
+        ]}),
+    ])
+    monkeypatch.setattr(db, "get_engine", lambda: object())
+    monkeypatch.setattr(pd, "read_sql", lambda *args, **kwargs: stored)
+    app = AppTest.from_file(str(ROOT / "dashboard_app.py")).run(timeout=20)
+    assert not app.exception
+    assert [item.value for item in app.subheader] == ["BQ1", "BQ3", "BQ9"]
+    assert len(app.get("arrow_vega_lite_chart")) == 4
+    assert len(app.dataframe) == 3
+    assert app.dataframe[0].value["module"].tolist() == ["context"]
+    assert app.dataframe[1].value["step_name"].tolist() == [
+        "interests", "difficulty", "typical_time", "budget_social"
+    ]
+    assert app.dataframe[2].value["category"].tolist() == ["Outdoors"]

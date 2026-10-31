@@ -9,12 +9,13 @@ Sprint 3 Kotlin BQ3 v2 now measures all four setup steps and linked first-quest
 acceptance. See [contract, formulas and validation](docs/BQ3_V2.md). Its versioned
 cohort is separate from legacy Sprint 2 step-completion-only events.
 
-## Initial Sprint 2 scope
+## Implemented and selected Business Questions
 
 Implemented/selected Business Questions:
 - BQ3 — Onboarding Drop-off (Type 2)
 - BQ5 — Personalized Quest Recommendation (Type 2)
 - BQ6 — Quest Abandonment Reasons (Type 2)
+- BQ7 — Group vs Individual Quest Performance (Type 3)
 - BQ8 — Recommendation Diversity (Type 3)
 - BQ9 — Quest Category Performance (Type 3)
 - BQ10 — Location-Independent Mode Usage (Type 3)
