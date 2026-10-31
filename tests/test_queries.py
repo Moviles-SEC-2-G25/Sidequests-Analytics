@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sidequests_analytics.queries import (
+    BQ1_MODULE_FAILURES_AFTER_RESUME_SQL,
     BQ3_ONBOARDING_DROPOFF_SQL,
     BQ4_INSTANT_PLAN_SQL,
     BQ5_PERSONALIZED_RECOMMENDATION_SQL,
@@ -97,6 +98,15 @@ def test_bq9_measures_recommendation_acceptance_per_category():
     assert "recommendation_skip_rate_pct" in sql
 
 
+def test_bq9_does_not_match_actions_before_or_long_after_recommendations():
+    sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
+    assert "min(ae.occurred_at) as first_shown_at" in sql
+    assert "a.occurred_at >= s.first_shown_at" in sql
+    assert "a.occurred_at < s.first_shown_at + interval '1 day'" in sql
+    assert "k.occurred_at >= s.first_shown_at" in sql
+    assert "k.occurred_at < s.first_shown_at + interval '1 day'" in sql
+
+
 def test_bq9_compares_categories_against_overall_baseline():
     sql = BQ9_CATEGORY_PERFORMANCE_SQL.lower()
     assert "status <> 'skipped'" in sql
@@ -180,3 +190,27 @@ def test_bq7_uses_a_30_day_window_and_excludes_skipped_attempts():
     sql = BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL.lower()
     assert "30 days" in sql
     assert "status <> 'skipped'" in sql
+
+
+def test_bq1_uses_resume_and_failure_events_from_kotlin():
+    sql = BQ1_MODULE_FAILURES_AFTER_RESUME_SQL.lower()
+    assert "bq1_resume_after_background" in sql
+    assert "module_failure" in sql
+    assert "metadata->>'bq' = 'bq1'" in sql
+    assert "after_long_resume" in sql
+
+
+def test_bq1_rate_uses_resumes_as_denominator_and_excludes_offline_failures():
+    sql = BQ1_MODULE_FAILURES_AFTER_RESUME_SQL.lower()
+    assert "long_resumes" in sql
+    assert "resume_at_millis" in sql
+    assert "online is not false" in sql
+    assert "failure_rate_pct" in sql
+    assert "nullif(r.long_resumes, 0)" in sql
+
+
+def test_bq1_ranks_modules_per_app_version_and_uses_device_event_time():
+    sql = BQ1_MODULE_FAILURES_AFTER_RESUME_SQL.lower()
+    assert "partition by f.app_version" in sql
+    assert "module_rank" in sql
+    assert "occurred_at_millis" in sql

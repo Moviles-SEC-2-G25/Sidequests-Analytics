@@ -20,6 +20,12 @@ It relies on `metadata.start_path` / `metadata.seconds_to_start` /
 `metadata.interactions_to_start` on `recommendation_accepted` and
 `quest_started` events (docs/EVENT_SCHEMA.md); events without `start_path`
 are ignored.
+BQ1 (Type 1, app telemetry) ranks the app modules that fail most often after the
+user returns to the app after >10 minutes in the background with an active Nearby
+quest. It relies on the Kotlin events `bq1_resume_after_background` and
+`module_failure` (metadata: bq='BQ1', module, fatal, after_long_resume, online,
+app_version, resume_at_millis, occurred_at_millis). Events are queued offline on
+the phone, so the event time comes from `occurred_at_millis` when present.
 """
 
 BQ3_ONBOARDING_DROPOFF_SQL = """
@@ -83,15 +89,17 @@ BQ9_CATEGORY_PERFORMANCE_SQL = """
 with shown as (
     -- one impression per user/session/quest: list reloads (filter changes,
     -- "Not for me") must not inflate the acceptance denominator
-    select distinct
+    select
         ae.user_id,
         ae.session_id,
         ae.quest_id,
-        q.category
+        q.category,
+        min(ae.occurred_at) as first_shown_at
     from public.analytics_events ae
     join public.quests q on q.id = ae.quest_id
     where ae.event_type = 'recommendation_shown'
       and ae.occurred_at >= now() - interval '30 days'
+    group by ae.user_id, ae.session_id, ae.quest_id, q.category
 ),
 shown_outcomes as (
     -- linked like BQ8: same user + session + quest
@@ -104,6 +112,8 @@ shown_outcomes as (
               and a.user_id = s.user_id
               and a.session_id is not distinct from s.session_id
               and a.quest_id = s.quest_id
+              and a.occurred_at >= s.first_shown_at
+              and a.occurred_at < s.first_shown_at + interval '1 day'
         ) as was_accepted,
         exists (
             select 1
@@ -112,6 +122,8 @@ shown_outcomes as (
               and k.user_id = s.user_id
               and k.session_id is not distinct from s.session_id
               and k.quest_id = s.quest_id
+              and k.occurred_at >= s.first_shown_at
+              and k.occurred_at < s.first_shown_at + interval '1 day'
         ) as was_skipped
     from shown s
 ),
@@ -733,4 +745,72 @@ select
     avg_completed_duration_minutes,
     completion_rate
 from per_user;
+"""
+
+
+BQ1_MODULE_FAILURES_AFTER_RESUME_SQL = """
+with bq1_events as (
+    select
+        event_type,
+        session_id,
+        coalesce(metadata->>'app_version', 'unknown') as app_version,
+        coalesce(metadata->>'module', 'unknown') as module,
+        coalesce((metadata->>'fatal')::boolean, false) as fatal,
+        coalesce((metadata->>'after_long_resume')::boolean, false) as after_long_resume,
+        (metadata->>'online')::boolean as online,
+        metadata->>'resume_at_millis' as resume_at_millis,
+        coalesce(
+            to_timestamp((metadata->>'occurred_at_millis')::bigint / 1000.0),
+            occurred_at
+        ) as event_time
+    from public.analytics_events
+    where event_type in ('bq1_resume_after_background', 'module_failure')
+      and metadata->>'bq' = 'BQ1'
+),
+recent as (
+    select * from bq1_events
+    where event_time >= now() - interval '30 days'
+),
+resumes as (
+    -- denominator: qualifying resumes (>10 min in background, active Nearby quest)
+    select app_version, count(distinct session_id || ':' || coalesce(resume_at_millis, '')) as long_resumes
+    from recent
+    where event_type = 'bq1_resume_after_background'
+    group by app_version
+),
+failures as (
+    -- numerator: failures within 5 minutes of such a resume, per module
+    select
+        app_version,
+        module,
+        count(*) as failures_after_resume,
+        count(*) filter (where fatal) as fatal_failures,
+        count(*) filter (where not fatal) as non_fatal_failures,
+        count(*) filter (where online is true) as failures_online,
+        count(*) filter (where online is false) as failures_offline,
+        count(distinct session_id || ':' || coalesce(resume_at_millis, ''))
+            filter (where online is not false) as resumes_with_real_failure
+    from recent
+    where event_type = 'module_failure'
+      and after_long_resume
+    group by app_version, module
+)
+select
+    f.app_version,
+    f.module,
+    coalesce(r.long_resumes, 0) as long_resumes,
+    f.failures_after_resume,
+    f.fatal_failures,
+    f.non_fatal_failures,
+    f.failures_online,
+    f.failures_offline,
+    f.resumes_with_real_failure,
+    round(100.0 * f.resumes_with_real_failure / nullif(r.long_resumes, 0), 2) as failure_rate_pct,
+    rank() over (
+        partition by f.app_version
+        order by f.resumes_with_real_failure desc, f.fatal_failures desc
+    ) as module_rank
+from failures f
+left join resumes r using (app_version)
+order by f.app_version desc, module_rank, f.module;
 """
