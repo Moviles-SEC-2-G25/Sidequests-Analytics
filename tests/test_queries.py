@@ -15,19 +15,12 @@ from sidequests_analytics.queries import (
 )
 
 
-def test_bq3_ranks_steps_by_dropoff_using_session_funnel():
+def test_bq3_extracts_only_versioned_linkable_source_events():
     sql = BQ3_ONBOARDING_DROPOFF_SQL.lower()
-    assert "onboarding_step_completed" in sql
-    assert "step_order" in sql
+    assert "metadata->>'bq_key' = 'bq3'" in sql
+    assert "cast(metadata->>'schema_version' as text) = '2'" in sql
     assert "session_id is not null" in sql
-    assert "distinct session_id" in sql
-    assert "dropoff_rate_pct" in sql
-    assert "order by dropoff_rate_pct desc" in sql
-
-
-def test_bq3_excludes_final_step_with_no_next_step():
-    sql = BQ3_ONBOARDING_DROPOFF_SQL.lower()
-    assert "where sessions_reached_next_step is not null" in sql
+    assert "user_id is not null" in sql
 
 
 def test_bq8_compares_experiment_variants_over_time():

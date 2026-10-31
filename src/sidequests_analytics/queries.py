@@ -7,10 +7,9 @@ come from `user_quests` attempts. No extra metadata contract is needed.
 BQ6 covers abandonment reason, duration, cost and distance. Distance comes from
 the `quest_abandoned` analytics event (distance_meters, sent by Flutter's
 Context Manager); abandonments without a matching event fall in 'unknown'.
-BQ3 relies on the `onboarding_step_completed` metadata contract defined in
-docs/EVENT_SCHEMA.md (`step_order` int, `step_name` text). No client emits this
-event yet, so the query is validated against seeded/synthetic data until Kotlin
-and Flutter implement the contract.
+BQ3 v2 uses explicit step views/completions/skips and first-recommendation
+exposure/acceptance events. The Python aggregation preserves pending outcomes
+and excludes legacy events that cannot establish the second half of BQ3.
 BQ8 is a Type 3 experiment (control vs diverse arm of `public.recommend_quests`).
 It relies on `metadata.variant` / `metadata.batch_id` / `metadata.rank` of
 `recommendation_shown` events (docs/EVENT_SCHEMA.md); events without them fall
@@ -22,61 +21,18 @@ It relies on `metadata.start_path` / `metadata.seconds_to_start` /
 are ignored.
 """
 
+# BQ3 v2 reads complete journeys; aggregation and outcome censoring live in bq3.py.
+# Do not limit events by time here: that would truncate journeys and misclassify
+# returning users. summarize_bq3 selects first-start cohorts within the last 30 days.
 BQ3_ONBOARDING_DROPOFF_SQL = """
-with steps as (
-    select
-        session_id,
-        (metadata->>'step_order')::int as step_order,
-        metadata->>'step_name' as step_name,
-        occurred_at
-    from public.analytics_events
-    where event_type = 'onboarding_step_completed'
-      and session_id is not null
-      and metadata ? 'step_order'
-),
-first_completion as (
-    -- collapse repeat/duplicate completions of the same step in a session
-    select distinct on (session_id, step_order)
-        session_id,
-        step_order,
-        step_name
-    from steps
-    order by session_id, step_order, occurred_at
-),
-step_labels as (
-    select
-        step_order,
-        mode() within group (order by step_name) as step_name
-    from first_completion
-    group by step_order
-),
-reached as (
-    select step_order, count(distinct session_id) as sessions_reached
-    from first_completion
-    group by step_order
-),
-funnel as (
-    select
-        r.step_order,
-        sl.step_name,
-        r.sessions_reached,
-        lead(r.sessions_reached) over (order by r.step_order) as sessions_reached_next_step
-    from reached r
-    join step_labels sl using (step_order)
-)
-select
-    step_order,
-    step_name,
-    sessions_reached,
-    sessions_reached_next_step,
-    round(
-        100.0 * (sessions_reached - sessions_reached_next_step)
-        / nullif(sessions_reached, 0),
-        2
-    ) as dropoff_rate_pct
-from funnel
-where sessions_reached_next_step is not null
-order by dropoff_rate_pct desc nulls last, step_order;
+select id, user_id, session_id, event_type, quest_id, occurred_at, metadata
+from public.analytics_events
+where metadata->>'bq_key' = 'BQ3'
+  and metadata->>'platform' = 'kotlin'
+  and cast(metadata->>'schema_version' as text) = '2'
+  and user_id is not null
+  and session_id is not null
+order by occurred_at, id;
 """
 
 BQ9_CATEGORY_PERFORMANCE_SQL = """

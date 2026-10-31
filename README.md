@@ -5,6 +5,10 @@ Shared analytics engine for the Sidequests Kotlin and Flutter applications.
 Both mobile clients write the same event contract into the shared Supabase backend.
 This repository owns the Business Question logic, recommendation analytics and pipeline documentation.
 
+Sprint 3 Kotlin BQ3 v2 now measures all four setup steps and linked first-quest
+acceptance. See [contract, formulas and validation](docs/BQ3_V2.md). Its versioned
+cohort is separate from legacy Sprint 2 step-completion-only events.
+
 ## Initial Sprint 2 scope
 
 Implemented/selected Business Questions:
