@@ -145,3 +145,34 @@ Both events store the selected value in the `location_mode` column and include
 
 The query counts each session once. A session is considered
 location-independent when it selected the independent mode at least once.
+
+## BQ1 resume and module failure events (Kotlin, Sprint 3)
+
+BQ1 uses two events sent by the Kotlin app. Both are written first to a local
+SQLite queue on the phone and uploaded by WorkManager when there is a
+connection, so `occurred_at` (server time) can be later than the real event:
+use `metadata.occurred_at_millis` (device time) when present.
+
+`bq1_resume_after_background` — the app came back to the foreground after more
+than 10 minutes in the background while an accepted, unfinished Nearby (GPS)
+quest was active. Metadata:
+
+- `bq` = `BQ1`
+- `app_version` (text), `online` (boolean)
+- `background_minutes` (integer), `quest_id` (text)
+- `resume_at_millis` (integer) — identifies the resume
+- `occurred_at_millis` (integer)
+
+`module_failure` — a fatal crash (uncaught exception, uploaded on the next start)
+or a non-fatal failure reported by a module. Metadata:
+
+- `bq` = `BQ1`
+- `module`: `auth`, `catalog`, `recommendations`, `context`, `geocoding`,
+  `quest_progress`, `photo_proof`, `sensors`, `analytics`, `ui` or `unknown`
+- `fatal` (boolean), `exception` (class name), `message` (max 200 chars)
+- `after_long_resume` (boolean) — true when it happened within 5 minutes of a
+  `bq1_resume_after_background`; then also `resume_at_millis`,
+  `background_minutes`, `seconds_since_resume` and `quest_id`
+- `online` (boolean) — validated internet at the moment of the failure, so
+  expected offline failures can be separated from real bugs
+- `app_version` (text), `occurred_at_millis` (integer)
