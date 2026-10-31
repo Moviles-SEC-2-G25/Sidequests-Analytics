@@ -39,6 +39,25 @@ else:
         data = payload.get("rows", [])
         frame = pd.DataFrame(data)
 
+        if row["bq_key"] == "BQ1":
+            st.caption(
+                "BQ1 · Which module fails most often after returning to the app "
+                "after >10 min with an active Nearby quest?"
+            )
+            if frame.empty:
+                st.info("No resume after a long background period has been recorded yet.")
+            elif {"module", "failure_rate_pct", "app_version"}.issubset(frame.columns):
+                latest = frame[frame["app_version"] == frame["app_version"].max()].copy()
+                latest["Failure rate (%)"] = pd.to_numeric(latest["failure_rate_pct"], errors="coerce")
+                st.bar_chart(latest.set_index("module")[["Failure rate (%)"]])
+                st.caption(
+                    "Failure rate = resumes with at least one failure of the module (while online) "
+                    "/ resumes after >10 min with a Nearby quest, latest app version, last 30 days. "
+                    "Offline failures are listed separately in the table."
+                )
+            else:
+                st.warning("BQ1 is missing the fields needed for the failure chart.")
+
         if row["bq_key"] == "BQ9":
             st.caption("BQ9 · Which quest categories are completed most often?")
             if frame.empty:

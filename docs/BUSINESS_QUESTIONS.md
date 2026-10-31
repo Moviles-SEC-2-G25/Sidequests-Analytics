@@ -1,5 +1,17 @@
 # Sprint 2 Business Questions
 
+## BQ1 — Module Failures After a Long Resume (Sprint 3, Kotlin)
+**Type 1 (app telemetry)**
+
+At what specific software module does the app most frequently crash when a user brings the app back to the foreground after tracking a location-based quest in the background for more than 10 minutes?
+
+- **Denominator:** `bq1_resume_after_background` events — resumes after >10 min in the background with an active Nearby quest (the app does not use background GPS, so "tracking" means an accepted, unfinished Nearby quest).
+- **Numerator:** `module_failure` events with `after_long_resume = true` (within 5 minutes of the resume), fatal or non-fatal, per module.
+- **Rate:** `failure_rate_pct` = resumes with at least one failure of the module while online ÷ long resumes, per app version. Failures while offline are reported separately (`failures_offline`) and excluded from the rate, because they are expected rather than bugs.
+- **Decision supported:** which module the team fixes first to make the resume after a Nearby quest reliable, and whether a release reduced that module's rate.
+
+Computed by `BQ1_MODULE_FAILURES_AFTER_RESUME_SQL` (last 30 days) and stored as `BQ1` in `analytics.bq_results`. Event contract: `docs/EVENT_SCHEMA.md`.
+
 ## BQ3 — Onboarding Drop-off
 **Type 2**
 
