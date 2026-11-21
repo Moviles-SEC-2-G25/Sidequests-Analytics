@@ -831,3 +831,11 @@ from failures f
 left join resumes r using (app_version)
 order by f.app_version desc, module_rank, f.module;
 """
+
+# Sprint 4 BQ8 companion cohort: two completions BEFORE an impression.
+# Keep the legacy all-users weekly BQ8 output unchanged for comparability.
+from pathlib import Path as _Path
+
+BQ8_EXPERIENCED_COHORT_SQL = (
+    _Path(__file__).resolve().parent / "sql" / "bq8_experienced.sql"
+).read_text(encoding="utf-8")
