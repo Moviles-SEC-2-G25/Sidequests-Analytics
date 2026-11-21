@@ -93,6 +93,39 @@ else:
             else:
                 st.warning("BQ1 is missing the fields needed for the failure chart.")
 
+        if row["bq_key"] == "BQ8_EXPERIENCED":
+            st.caption(
+                "BQ8 Sprint 4 · Users with at least 2 completed quests before the "
+                "recommendation. Acceptance and a 24h different-session return proxy."
+            )
+            required = {
+                "variant", "eligible_users", "comparable_batches",
+                "avg_distinct_categories_per_list", "acceptance_rate_pct",
+                "return_rate_24h_pct", "mature_return_users",
+            }
+            if not required.issubset(frame.columns):
+                st.warning("The completed-user experiment result is missing required fields.")
+            else:
+                st.table(frame[[
+                    "variant", "eligible_users", "comparable_batches",
+                    "avg_distinct_categories_per_list",
+                    "mature_acceptance_opportunities", "accepted_mature_opportunities",
+                    "acceptance_rate_pct", "mature_return_users",
+                    "observed_return_users_24h", "return_rate_24h_pct",
+                ]])
+                if (frame["eligible_users"].fillna(0) < 10).any():
+                    st.warning(
+                        "Sample too small for a reliable treatment effect. "
+                        "Do not claim the diverse arm improves acceptance or retention."
+                    )
+                st.caption(
+                    "Return proxy: a separately instrumented user session starting "
+                    "30 minutes to 24 hours after first eligible exposure. "
+                    "Only mature 24-hour cohorts enter outcome denominators; "
+                    "missing or uninstrumented app opens cannot be detected. "
+                    "This is observational evidence, not causal validation."
+                )
+
         if row["bq_key"] == "BQ9":
             st.caption("BQ9 · Which quest categories are completed most often?")
             if frame.empty:
