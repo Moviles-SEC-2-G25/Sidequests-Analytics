@@ -256,3 +256,39 @@ or a non-fatal failure reported by a module. Metadata:
 - `online` (boolean) — validated internet at the moment of the failure, so
   expected offline failures can be separated from real bugs
 - `app_version` (text), `occurred_at_millis` (integer)
+
+## Sprint 4 Kotlin: new discovery experiences and BQ4/BQ14
+
+These events are in the existing private `analytics_events` table, and Kotlin
+queues `s4_discovery_shown`, `s4_discovery_selected`, and
+`s4_start_confirmed` in the per-account WorkManager outbox before delivering
+them. The original event timestamp is preserved after disconnection.
+
+- `s4_discovery_shown`: one event per actual displayed quest in the
+  "variety" or "social_comfort" view. Metadata: `s4_source` and, for the
+  social comparison, `comfort_level` and stable `variant` (`control` /
+  `personalized`). The shortlist does not imply a quest was accepted.
+- `s4_discovery_selected`: tapping a quest in group, variety or social
+  discovery opens its detail; this is not an acceptance.
+- `quest_accepted`: emitted after a new attempt is confirmed by the backend,
+  with `attempt_id`, `discovery_source`, `start_path`,
+  `seconds_to_start` and `interactions_to_start`.
+  Social comfort acceptances include `comfort_level` and `variant`.
+- `s4_start_confirmed`: a durable copy of the same successful start's BQ4
+  dimensions, for consistent counting after an outage; Analytics deduplicates
+  by `attempt_id` to avoid counting `recommendation_accepted` twice.
+- `recommendation_shown` BQ8: Kotlin now passes server-provided `variant`
+  and `rank_position` plus a single `batch_id` per fresh RPC batch.
+  Memory-cache hits and stale fallback do not generate duplicate impressions.
+
+BQ4 reports descriptive starts, seconds and interaction counts for the two
+paths. Its clock starts when Explore is entered. Multiple changes or returning
+from other screens can affect those times; do not claim a controlled A/B test.
+
+BQ14 uses a stable assignment derived from the signed-in account identifier,
+and compares two versions of the same social-comfort screen: `control` keeps
+eligible options without the comfort filter, `personalized` applies that filter.
+This is not evidence of causal benefit without real, sufficiently-sized,
+balanced cohorts. The seven-day return rate excludes users whose observation
+window is not yet complete. These analytics are aggregate-only; do not publish
+raw per-user event rows.
