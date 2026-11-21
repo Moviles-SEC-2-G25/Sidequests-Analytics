@@ -126,7 +126,7 @@ else:
                 chart["Cohort"] = chart["comfort_level"] + " · " + chart["variant"]
                 st.bar_chart(chart.set_index("Cohort")[["Acceptance rate (%)"]])
                 st.caption(
-                    "Counts and completion rates are shown below. Seven-day returns are computed "
+                    "Counts and completion rates are shown below. Next-day returns are computed "
                     "only for mature cohorts. Small or unbalanced samples cannot establish a "
                     "causal improvement; this measures in-app observed outcomes only."
                 )
