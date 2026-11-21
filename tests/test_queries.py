@@ -13,6 +13,7 @@ from sidequests_analytics.queries import (
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
+    BQ14_SOCIAL_COMFORT_SQL,
     USER_FEATURES_SQL,
 )
 
@@ -229,3 +230,32 @@ def test_bq1_ranks_modules_per_app_version_and_uses_device_event_time():
     assert "partition by f.app_version" in sql
     assert "module_rank" in sql
     assert "occurred_at_millis" in sql
+
+def test_sprint4_bq4_deduplicates_confirmation_and_funnel_events():
+    sql = BQ4_INSTANT_PLAN_SQL.lower()
+    assert "s4_start_confirmed" in sql
+    assert "candidate_starts" in sql
+    assert "row_number() over" in sql
+    assert "attempt_id" in sql
+    assert "event_rank = 1" in sql
+    assert "30 days" in sql
+
+
+def test_sprint4_bq14_has_stable_arms_and_observed_completion():
+    sql = BQ14_SOCIAL_COMFORT_SQL.lower()
+    assert "s4_discovery_shown" in sql
+    assert "quest_accepted" in sql
+    assert "'control', 'personalized'" in sql
+    assert "uq.status" in sql
+    assert "status = 'completed'" in sql
+    assert "completion_rate_pct" in sql
+    assert "acceptance_rate_pct" in sql
+
+
+def test_sprint4_bq14_counts_retention_only_for_mature_users():
+    sql = BQ14_SOCIAL_COMFORT_SQL.lower()
+    assert "distinct on (user_id)" in sql
+    assert "interval '7 days'" in sql
+    assert "other.session_id is distinct from c.session_id" in sql
+    assert "mature_users" in sql
+    assert "seven_day_return_rate_pct" in sql
