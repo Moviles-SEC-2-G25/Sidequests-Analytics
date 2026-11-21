@@ -17,6 +17,7 @@ from .queries import (
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
+    BQ14_SOCIAL_COMFORT_SQL,
     USER_FEATURES_SQL,
 )
 
@@ -45,6 +46,10 @@ def compute_bq7(engine) -> list[dict]:
 
 def compute_bq8(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ8_RECOMMENDATION_DIVERSITY_SQL), engine))
+
+
+def compute_bq14(engine) -> list[dict]:
+    return _records(pd.read_sql(text(BQ14_SOCIAL_COMFORT_SQL), engine))
 
 
 def compute_bq9(engine) -> list[dict]:
@@ -126,7 +131,7 @@ def run() -> None:
                         help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
-        choices=("all", "bq1", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "features"),
+        choices=("all", "bq1", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "bq14", "features"),
         default="all",
     )
     args = parser.parse_args()
@@ -177,6 +182,11 @@ def run() -> None:
         bq9 = compute_bq9(engine)
         store_bq_result(engine, "BQ9", bq9)
         print(f"stored BQ9 rows: {len(bq9)}")
+
+    if args.job in ("all", "bq14"):
+        bq14 = compute_bq14(engine)
+        store_bq_result(engine, "BQ14", bq14)
+        print(f"stored BQ14 rows: {len(bq14)}")
 
     if args.job in ("all", "bq10"):
         bq10 = compute_bq10(engine)
