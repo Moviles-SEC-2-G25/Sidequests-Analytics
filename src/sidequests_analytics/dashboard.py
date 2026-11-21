@@ -93,6 +93,48 @@ else:
             else:
                 st.warning("BQ1 is missing the fields needed for the failure chart.")
 
+        if row["bq_key"] == "BQ4":
+            st.caption("BQ4 · Compare confirmed quest starts through Instant Plan and the standard path.")
+            if {"platform", "start_path", "starts_count", "avg_seconds_to_start", "avg_interactions_to_start"}.issubset(frame.columns):
+                chart = frame.copy()
+                chart["Path"] = chart["platform"] + " · " + chart["start_path"]
+                chart["Average seconds"] = pd.to_numeric(chart["avg_seconds_to_start"], errors="coerce")
+                chart["Average interactions"] = pd.to_numeric(chart["avg_interactions_to_start"], errors="coerce")
+                left, right = st.columns(2)
+                with left:
+                    st.bar_chart(chart.set_index("Path")[["Average seconds"]])
+                with right:
+                    st.bar_chart(chart.set_index("Path")[["Average interactions"]])
+                st.caption("Both measurements are descriptive. Start definitions are grouped by platform; check the number of confirmed starts before comparing paths.")
+            else:
+                st.info("BQ4 has no compatible confirmed start data yet.")
+
+        if row["bq_key"] == "BQ7":
+            st.caption("BQ7 · Attempts on group-labelled vs individual quests. This does not verify participation in a real shared group.")
+            if {"quest_type", "completion_rate_pct", "adoption_share_pct"}.issubset(frame.columns):
+                chart = frame.copy()
+                chart["Completion rate (%)"] = pd.to_numeric(chart["completion_rate_pct"], errors="coerce")
+                chart["Adoption share (%)"] = pd.to_numeric(chart["adoption_share_pct"], errors="coerce")
+                st.bar_chart(chart.set_index("quest_type")[["Completion rate (%)", "Adoption share (%)"]])
+            else:
+                st.info("BQ7 does not yet have both quest-type categories.")
+
+        if row["bq_key"] == "BQ8":
+            st.caption("BQ8 · Server-side control/diverse recommendation experiment, not the opt-in local variety screen.")
+            if {"variant", "week_start", "avg_distinct_categories_per_list", "acceptance_rate_pct"}.issubset(frame.columns):
+                chart = frame.copy()
+                chart["Cohort"] = chart["variant"] + " · " + chart["week_start"].astype(str)
+                chart["Categories per list"] = pd.to_numeric(chart["avg_distinct_categories_per_list"], errors="coerce")
+                chart["Acceptance rate (%)"] = pd.to_numeric(chart["acceptance_rate_pct"], errors="coerce")
+                left, right = st.columns(2)
+                with left:
+                    st.bar_chart(chart.set_index("Cohort")[["Categories per list"]])
+                with right:
+                    st.bar_chart(chart.set_index("Cohort")[["Acceptance rate (%)"]])
+                st.caption("Compare the exposure counts in the table. The two arms require real, representative sessions.")
+            else:
+                st.info("BQ8 has no experiment batches suitable for charting yet.")
+
         if row["bq_key"] == "BQ9":
             st.caption("BQ9 · Which quest categories are completed most often?")
             if frame.empty:
