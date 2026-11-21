@@ -252,10 +252,10 @@ def test_sprint4_bq14_has_stable_arms_and_observed_completion():
     assert "acceptance_rate_pct" in sql
 
 
-def test_sprint4_bq14_counts_retention_only_for_mature_users():
+def test_sprint4_bq14_counts_next_day_returns_only_for_mature_users():
     sql = BQ14_SOCIAL_COMFORT_SQL.lower()
     assert "distinct on (user_id)" in sql
-    assert "interval '7 days'" in sql
+    assert "interval '24 hours'" in sql
     assert "other.session_id is distinct from c.session_id" in sql
     assert "mature_users" in sql
-    assert "seven_day_return_rate_pct" in sql
+    assert "next_day_return_rate_pct" in sql
