@@ -104,3 +104,38 @@ How is location-independent mode used across sessions/context conditions?
 ## Rule
 
 A BQ only counts for Sprint 2 when its logic is implemented and demonstrated against real analytics data; documentation alone is not sufficient.
+
+## Sprint 4 Kotlin — BQ8 experienced-user analysis (separate from existing weekly BQ8)
+
+**Original research focus:** Does a diversity-aware ranking correlate with higher
+recommendation acceptance and observable app return among users who have
+already completed multiple Side-Quests?
+
+Existing `BQ8` weekly output describes all users, including legacy
+`unassigned` events; it remains unchanged. A new `BQ8_EXPERIENCED`
+result addresses the experienced cohort explicitly:
+
+- **Eligibility:** at least **two completed attempts with `completed_at`
+  strictly earlier than the exposure**. Counting today's completions against
+  historic exposures would leak future information.
+- **Comparison:** server-assigned `control` versus `diverse`. Legacy
+  `unassigned` events do not enter the comparison.
+- **Diversity:** number and fraction of unique categories in distinct
+  recommendation lists. A list with only one visible card is excluded from
+  the category-diversity average.
+- **Acceptance:** a unique user/session/quest exposure can be accepted within
+  the following 24 hours. Recent opportunities without a complete observation
+  window are withheld from the rate denominator.
+- **Observed return:** a **different instrumented session** within 30 minutes
+  to 24 hours of the first eligible exposure. Only cohorts with at least
+  24 hours of follow-up enter the denominator. Not all app opens are
+  instrumented; this is a proxy, not true retention.
+- **Sample and conclusions:** counts are user-level for the return metric;
+  many lists from one user do not imply a large sample. No statistically
+  defensible treatment claim is possible with only a few eligible people.
+- **Execution:** `scripts/run-bq8-local.ps1` is read-only by default;
+  `-Publish` explicitly stores aggregate `BQ8` and
+  `BQ8_EXPERIENCED` results. No changes to raw analytics events or user
+  quest attempts are performed by this runner.
+
+See [BQ8 Sprint 4 evaluation and command](BQ8_SPRINT4.md).
