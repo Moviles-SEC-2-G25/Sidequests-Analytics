@@ -932,16 +932,16 @@ first_exposure_per_user as (
 return_cohort as (
     select c.variant, c.comfort_level,
            count(*) filter (
-               where c.shown_at <= now() - interval '7 days'
+               where c.shown_at <= now() - interval '24 hours'
            ) as mature_users,
            count(*) filter (
-               where c.shown_at <= now() - interval '7 days'
+               where c.shown_at <= now() - interval '24 hours'
                  and exists (
                      select 1 from public.analytics_events other
                      where other.user_id = c.user_id
                        and other.session_id is distinct from c.session_id
                        and other.occurred_at > c.shown_at
-                       and other.occurred_at <= c.shown_at + interval '7 days'
+                       and other.occurred_at <= c.shown_at + interval '24 hours'
                  )
            ) as returned_users
     from first_exposure_per_user c
@@ -957,7 +957,7 @@ select
     coalesce(r.mature_users, 0) as mature_users,
     coalesce(r.returned_users, 0) as returned_users,
     round(100.0 * r.returned_users / nullif(r.mature_users, 0), 2)
-        as seven_day_return_rate_pct
+        as next_day_return_rate_pct
 from performance p
 left join return_cohort r
   on r.variant = p.variant and r.comfort_level = p.comfort_level
