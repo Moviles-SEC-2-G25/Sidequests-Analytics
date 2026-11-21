@@ -501,6 +501,11 @@ with candidate_starts as (
             nullif(ae.metadata->>'attempt_id', ''),
             concat_ws(':', ae.user_id::text, ae.session_id::text, ae.quest_id::text)
         ) as attempt_key,
+        case
+            when ae.event_type = 's4_start_confirmed' then 'kotlin'
+            when ae.metadata->>'platform' = 'kotlin' then 'kotlin'
+            else 'flutter_or_legacy'
+        end as platform,
         ae.metadata->>'start_path' as start_path,
         (ae.metadata->>'seconds_to_start')::numeric as seconds_to_start,
         (ae.metadata->>'interactions_to_start')::numeric as interactions_to_start,
@@ -526,29 +531,30 @@ with candidate_starts as (
       and ae.occurred_at >= now() - interval '30 days'
 ),
 starts as (
-    select start_path, seconds_to_start, interactions_to_start
+    select platform, start_path, seconds_to_start, interactions_to_start
     from candidate_starts
     where event_rank = 1
       and interactions_to_start > 0
 ),
 per_path as (
     select
-        start_path,
+        platform, start_path,
         count(*) as starts_count,
         round(avg(seconds_to_start), 2) as avg_seconds_to_start,
         round((percentile_cont(0.5) within group (order by seconds_to_start))::numeric, 2)
             as median_seconds_to_start,
         round(avg(interactions_to_start), 2) as avg_interactions_to_start
     from starts
-    group by start_path
+    group by start_path, platform
 ),
 baseline as (
-    select avg_seconds_to_start as standard_avg_seconds,
+    select platform, avg_seconds_to_start as standard_avg_seconds,
            avg_interactions_to_start as standard_avg_interactions
     from per_path
     where start_path = 'standard'
 )
 select
+    pp.platform,
     pp.start_path,
     pp.starts_count,
     pp.avg_seconds_to_start,
@@ -559,8 +565,8 @@ select
     round(100.0 * (b.standard_avg_interactions - pp.avg_interactions_to_start)
           / nullif(b.standard_avg_interactions, 0), 2) as interactions_reduction_pct_vs_standard
 from per_path pp
-left join baseline b on true
-order by pp.starts_count desc, pp.start_path;
+left join baseline b on b.platform = pp.platform
+order by pp.platform, pp.starts_count desc, pp.start_path;
 """
 
 BQ10_LOCATION_INDEPENDENT_USAGE_SQL = """
