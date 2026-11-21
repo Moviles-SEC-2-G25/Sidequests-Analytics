@@ -289,6 +289,6 @@ BQ14 uses a stable assignment derived from the signed-in account identifier,
 and compares two versions of the same social-comfort screen: `control` keeps
 eligible options without the comfort filter, `personalized` applies that filter.
 This is not evidence of causal benefit without real, sufficiently-sized,
-balanced cohorts. The seven-day return rate excludes users whose observation
+balanced cohorts. The next-day return rate excludes users whose 24-hour observation
 window is not yet complete. These analytics are aggregate-only; do not publish
 raw per-user event rows.
