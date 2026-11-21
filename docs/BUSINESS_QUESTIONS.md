@@ -104,3 +104,36 @@ How is location-independent mode used across sessions/context conditions?
 ## Rule
 
 A BQ only counts for Sprint 2 when its logic is implemented and demonstrated against real analytics data; documentation alone is not sufficient.
+
+## Sprint 4 Kotlin: selected from the original Sprint 1 BQ list
+
+- **BQ4 — Instant Plans (Type 2; proposed Kotlin owner Julián Ramírez):**
+  compare confirmed starts using `instant_plan` vs `standard` by time and
+  number of interactions. The Kotlin app emits a durable
+  `s4_start_confirmed` event with an attempt ID so a duplicated
+  `recommendation_accepted` is not counted twice. The pipeline now segments
+  Kotlin and legacy Flutter independently because their start instrumentation
+  must not be mixed without checking identical measurement definitions.
+- **BQ7 — Group vs Individual (Type 3; proposed Kotlin owner Lex):** existing
+  query counts attempted/adopted group-labelled vs individual quests, not real
+  group memberships. The new Kotlin discovery screen uses the classification
+  to help users find suitable group-labelled activities.
+- **BQ8 — Recommendation Diversity (Type 3; proposed Kotlin owner Sebastián):**
+  existing server-assigned `control`/`diverse` experiment. Kotlin now copies
+  the RPC's variant/rank plus a fresh shared batch ID to impression telemetry.
+  The opt-in variety screen is **not** the experiment treatment.
+- **BQ14 — Social Comfort Personalization (Type 5; proposed Kotlin owner Carlos):**
+  compare per-account stable control vs comfort-filtered treatment arms for
+  acceptance and completion among exposed quests. Estimate next-day return
+  only for users with a full 24-hour observation window; record cohort sizes.
+  The analysis has no valid outcome conclusion until real observations exist.
+
+All owner labels are **planning suggestions**, not statements of who authored
+this branch's code. The group must verify whether the lecturer's Sprint 3
+cross-platform BQ reuse permission also applies to Sprint 4. BQ5 was Sebastián's
+Sprint 2 contribution; BQ9 was his Sprint 3 contribution; the unfinished BQ12
+work is not a completed Sebastián Sprint 3 deliverable.
+
+**Current validation:** SQL and pipeline code have automated tests. The
+new query has not been demonstrated against actual Supabase data, and there
+is no claim of statistically supported comparative effects.
