@@ -492,32 +492,59 @@ order by e.week_start desc, e.variant;
 """
 
 BQ4_INSTANT_PLAN_SQL = """
-with starts as (
+-- Kotlin Sprint 4 emits s4_start_confirmed only once the backend accepts a
+-- new attempt. Flutter's existing recommendation_accepted/quest_started events
+-- remain supported. Deduplicate the same attempt appearing under two event names.
+with candidate_starts as (
     select
+        coalesce(
+            nullif(ae.metadata->>'attempt_id', ''),
+            concat_ws(':', ae.user_id::text, ae.session_id::text, ae.quest_id::text)
+        ) as attempt_key,
         ae.metadata->>'start_path' as start_path,
         (ae.metadata->>'seconds_to_start')::numeric as seconds_to_start,
-        (ae.metadata->>'interactions_to_start')::numeric as interactions_to_start
+        (ae.metadata->>'interactions_to_start')::numeric as interactions_to_start,
+        row_number() over (
+            partition by coalesce(
+                nullif(ae.metadata->>'attempt_id', ''),
+                concat_ws(':', ae.user_id::text, ae.session_id::text, ae.quest_id::text)
+            )
+            order by
+                case ae.event_type
+                    when 's4_start_confirmed' then 0
+                    when 'recommendation_accepted' then 1
+                    else 2
+                end,
+                ae.occurred_at
+        ) as event_rank
     from public.analytics_events ae
-    where ae.event_type in ('recommendation_accepted', 'quest_started')
+    where ae.event_type in ('recommendation_accepted', 'quest_started', 's4_start_confirmed')
       and ae.metadata ? 'start_path'
+      and ae.metadata->>'start_path' in ('instant_plan', 'standard')
+      and ae.metadata->>'seconds_to_start' ~ '^[0-9]+([.][0-9]+)?$'
+      and ae.metadata->>'interactions_to_start' ~ '^[0-9]+$'
+      and ae.occurred_at >= now() - interval '30 days'
+),
+starts as (
+    select start_path, seconds_to_start, interactions_to_start
+    from candidate_starts
+    where event_rank = 1
+      and interactions_to_start > 0
 ),
 per_path as (
     select
         start_path,
         count(*) as starts_count,
         round(avg(seconds_to_start), 2) as avg_seconds_to_start,
-        round(
-            (percentile_cont(0.5) within group (order by seconds_to_start))::numeric,
-            2
-        ) as median_seconds_to_start,
+        round((percentile_cont(0.5) within group (order by seconds_to_start))::numeric, 2)
+            as median_seconds_to_start,
         round(avg(interactions_to_start), 2) as avg_interactions_to_start
     from starts
     group by start_path
 ),
 baseline as (
-    select
-        avg_seconds_to_start as standard_avg_seconds,
-        avg_interactions_to_start as standard_avg_interactions
+    select avg_seconds_to_start as standard_avg_seconds,
+           avg_interactions_to_start as standard_avg_interactions
     from per_path
     where start_path = 'standard'
 )
@@ -527,18 +554,12 @@ select
     pp.avg_seconds_to_start,
     pp.median_seconds_to_start,
     pp.avg_interactions_to_start,
-    round(
-        100.0 * (b.standard_avg_seconds - pp.avg_seconds_to_start)
-        / nullif(b.standard_avg_seconds, 0),
-        2
-    ) as seconds_reduction_pct_vs_standard,
-    round(
-        100.0 * (b.standard_avg_interactions - pp.avg_interactions_to_start)
-        / nullif(b.standard_avg_interactions, 0),
-        2
-    ) as interactions_reduction_pct_vs_standard
+    round(100.0 * (b.standard_avg_seconds - pp.avg_seconds_to_start)
+          / nullif(b.standard_avg_seconds, 0), 2) as seconds_reduction_pct_vs_standard,
+    round(100.0 * (b.standard_avg_interactions - pp.avg_interactions_to_start)
+          / nullif(b.standard_avg_interactions, 0), 2) as interactions_reduction_pct_vs_standard
 from per_path pp
-cross join baseline b
+left join baseline b on true
 order by pp.starts_count desc, pp.start_path;
 """
 
@@ -830,4 +851,115 @@ select
 from failures f
 left join resumes r using (app_version)
 order by f.app_version desc, module_rank, f.module;
+"""
+
+# Sprint 4 (Kotlin): BQ14 social comfort personalization experiment.
+# User assignments are stable but deterministic, not cryptographic randomness.
+# Return cohorts only mature after 7 days, and completion counts are observed
+# statuses rather than a causal claim. No individual data is published.
+BQ14_SOCIAL_COMFORT_SQL = """
+with exposures as (
+    select distinct on (
+        ae.user_id, ae.session_id, ae.quest_id,
+        ae.metadata->>'variant', ae.metadata->>'comfort_level'
+    )
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        ae.metadata->>'variant' as variant,
+        ae.metadata->>'comfort_level' as comfort_level,
+        ae.occurred_at as shown_at
+    from public.analytics_events ae
+    where ae.event_type = 's4_discovery_shown'
+      and ae.metadata->>'s4_source' = 'social_comfort'
+      and ae.metadata->>'variant' in ('control', 'personalized')
+      and ae.metadata->>'comfort_level' in ('solo', 'social', 'group')
+      and ae.user_id is not null and ae.session_id is not null and ae.quest_id is not null
+      and ae.occurred_at >= now() - interval '30 days'
+    order by
+        ae.user_id, ae.session_id, ae.quest_id,
+        ae.metadata->>'variant', ae.metadata->>'comfort_level', ae.occurred_at
+),
+accepts as (
+    select
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        ae.metadata->>'variant' as variant,
+        ae.metadata->>'comfort_level' as comfort_level,
+        ae.metadata->>'attempt_id' as attempt_id,
+        ae.occurred_at as accepted_at
+    from public.analytics_events ae
+    where ae.event_type = 'quest_accepted'
+      and ae.metadata->>'discovery_source' = 'social_comfort'
+      and ae.metadata ? 'attempt_id'
+      and ae.occurred_at >= now() - interval '30 days'
+),
+observations as (
+    select e.*,
+           matched.attempt_id,
+           uq.status
+    from exposures e
+    left join lateral (
+        select a.attempt_id
+        from accepts a
+        where a.user_id = e.user_id
+          and a.session_id = e.session_id
+          and a.quest_id = e.quest_id
+          and a.variant = e.variant
+          and a.comfort_level = e.comfort_level
+          and a.accepted_at >= e.shown_at
+        order by a.accepted_at asc
+        limit 1
+    ) matched on true
+    left join public.user_quests uq
+      on uq.id::text = matched.attempt_id and uq.user_id = e.user_id
+),
+performance as (
+    select variant, comfort_level,
+           count(*) as recommendation_exposures,
+           count(attempt_id) as accepted_exposures,
+           count(*) filter (where status = 'completed') as completed_exposures
+    from observations
+    group by variant, comfort_level
+),
+first_exposure_per_user as (
+    select distinct on (user_id)
+           user_id, session_id, variant, comfort_level, shown_at
+    from exposures
+    order by user_id, shown_at
+),
+return_cohort as (
+    select c.variant, c.comfort_level,
+           count(*) filter (
+               where c.shown_at <= now() - interval '7 days'
+           ) as mature_users,
+           count(*) filter (
+               where c.shown_at <= now() - interval '7 days'
+                 and exists (
+                     select 1 from public.analytics_events other
+                     where other.user_id = c.user_id
+                       and other.session_id is distinct from c.session_id
+                       and other.occurred_at > c.shown_at
+                       and other.occurred_at <= c.shown_at + interval '7 days'
+                 )
+           ) as returned_users
+    from first_exposure_per_user c
+    group by c.variant, c.comfort_level
+)
+select
+    p.variant, p.comfort_level,
+    p.recommendation_exposures, p.accepted_exposures, p.completed_exposures,
+    round(100.0 * p.accepted_exposures / nullif(p.recommendation_exposures, 0), 2)
+        as acceptance_rate_pct,
+    round(100.0 * p.completed_exposures / nullif(p.accepted_exposures, 0), 2)
+        as completion_rate_pct,
+    coalesce(r.mature_users, 0) as mature_users,
+    coalesce(r.returned_users, 0) as returned_users,
+    round(100.0 * r.returned_users / nullif(r.mature_users, 0), 2)
+        as seven_day_return_rate_pct
+from performance p
+left join return_cohort r
+  on r.variant = p.variant and r.comfort_level = p.comfort_level
+order by p.comfort_level, p.variant;
 """
