@@ -50,7 +50,9 @@ def compute_bq8(engine) -> list[dict]:
 
 def compute_bq8_experienced(engine) -> list[dict]:
     """BQ8 original cohort, filtered to users with >=2 previous completions."""
-    return _records(pd.read_sql(text(BQ8_EXPERIENCED_COHORT_SQL), engine))
+    frame = pd.read_sql(text(BQ8_EXPERIENCED_COHORT_SQL), engine)
+    # Numeric NaN must become JSON null; pandas numeric columns otherwise retain NaN.
+    return frame.astype(object).where(pd.notnull(frame), None).to_dict(orient="records")
 
 
 def compute_bq9(engine) -> list[dict]:
