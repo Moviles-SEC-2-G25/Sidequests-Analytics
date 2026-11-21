@@ -9,7 +9,7 @@ from .db import get_engine
 
 st.set_page_config(page_title="Sidequests Analytics", layout="wide")
 st.title("Sidequests · BQ Dashboard")
-st.caption("Shared Sprint 2 and Sprint 3 analytics results from the Sidequests database")
+st.caption("Shared Sprint 2–4 analytics results from the Sidequests database")
 
 engine = get_engine()
 
@@ -112,5 +112,25 @@ else:
                 )
             else:
                 st.warning("BQ9 is missing the fields needed for the completion chart.")
+
+        if row["bq_key"] == "BQ14":
+            st.caption(
+                "BQ14 · Social-comfort comparison. Stable per-user arms; "
+                "personalized is a comfort filter, control does not apply the filter."
+            )
+            if frame.empty:
+                st.info("No instrumented social-comfort exposures recorded yet.")
+            elif {"variant", "comfort_level", "acceptance_rate_pct", "recommendation_exposures"}.issubset(frame.columns):
+                chart = frame.copy()
+                chart["Acceptance rate (%)"] = pd.to_numeric(chart["acceptance_rate_pct"], errors="coerce")
+                chart["Cohort"] = chart["comfort_level"] + " · " + chart["variant"]
+                st.bar_chart(chart.set_index("Cohort")[["Acceptance rate (%)"]])
+                st.caption(
+                    "Counts and completion rates are shown below. Seven-day returns are computed "
+                    "only for mature cohorts. Small or unbalanced samples cannot establish a "
+                    "causal improvement; this measures in-app observed outcomes only."
+                )
+            else:
+                st.warning("BQ14 does not yet have enough fields for its comparison chart.")
 
         st.dataframe(frame, use_container_width=True)
