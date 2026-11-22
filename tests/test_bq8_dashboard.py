@@ -28,7 +28,8 @@ def test_streamlit_entrypoint_supports_local_secret_and_existing_env():
     compile(source, "dashboard_app.py", "exec")
     assert 'if not os.getenv("DATABASE_URL"):' in source
     assert 'st.secrets.get("DATABASE_URL")' in source
-    assert 'st.stop()' in source
+    assert 'if database_url:' in source
+    assert 'st.stop()' not in source
 
 
 def test_live_bq8_dashboard_does_not_publish_results():
