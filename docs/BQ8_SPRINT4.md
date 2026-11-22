@@ -46,6 +46,28 @@ a large `unassigned` legacy cohort. This Sprint 4 companion computes
   interactive PostgreSQL connection; read-only by default.
 - `tests/test_queries.py`: tests expected cohort and maturity contracts.
 
+## Safe Windows checkout when the existing local folder has changes
+
+If `git switch feature/s4-bq8-experienced-analytics` fails because your old
+`src/sidequests_analytics/dashboard.py` has uncommitted changes, **do not
+discard or reset them**. Use a separate checkout and the Python environment
+you already installed in the original project:
+
+```powershell
+cd C:\ANDES
+git clone --branch feature/s4-bq8-experienced-analytics --single-branch https://github.com/Moviles-SEC-2-G25/Sidequests-Analytics.git Sidequests-Analytics-BQ8
+cd .\Sidequests-Analytics-BQ8
+git branch --show-current
+Test-Path .\scripts\run-bq8-local.ps1
+Test-Path 'C:\ANDES\Sidequests-Analytics\.venv\Scripts\python.exe'
+.\scripts\run-bq8-local.ps1 -PythonExe 'C:\ANDES\Sidequests-Analytics\.venv\Scripts\python.exe'
+```
+
+This separate checkout keeps the original `C:\ANDES\Sidequests-Analytics`,
+including its uncommitted changes and installed `.venv`, untouched. The
+`-PythonExe` parameter is supported by the Sprint 4 BQ8 runner.
+These commands assume the paths above match your own Windows installation.
+
 ## Windows PowerShell — same pattern as the earlier BQ3 command
 
 1. Open a PowerShell terminal in the `Sidequests-Analytics` repository.
