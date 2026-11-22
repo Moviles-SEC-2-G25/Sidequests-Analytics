@@ -268,3 +268,12 @@ def test_bq8_sprint4_local_launcher_default_is_read_only():
     assert 'if args.publish:' in src
     assert 'store_bq_result(engine, "BQ8_EXPERIENCED", experienced)' in src
     compile(src, "run_bq8_local.py", "exec")
+
+
+def test_bq8_sprint4_powershell_allows_existing_venv_from_other_checkout():
+    from pathlib import Path
+    wrapper = (Path(__file__).resolve().parents[1] / "scripts" / "run-bq8-local.ps1").read_text()
+    assert "[string]$PythonExe" in wrapper
+    assert "Test-Path -LiteralPath $PythonExe -PathType Leaf" in wrapper
+    assert "if ($PythonExe)" in wrapper
+    assert "& $python -B @argsForPython" in wrapper
