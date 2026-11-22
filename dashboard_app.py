@@ -14,13 +14,10 @@ if not os.getenv("DATABASE_URL"):
         database_url = st.secrets.get("DATABASE_URL")
     except (FileNotFoundError, PermissionError, OSError):
         database_url = None
-    if not database_url:
-        st.error(
-            "Missing database connection. Run scripts/configure_bq8_dashboard.py "
-            "once, or set DATABASE_URL in this process."
-        )
-        st.stop()
-    os.environ["DATABASE_URL"] = str(database_url)
+    if database_url:
+        os.environ["DATABASE_URL"] = str(database_url)
+    # Otherwise leave normal get_engine() behavior intact, including injected
+    # test connections; the dashboard shows a helpful message if DB config is absent.
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 runpy.run_module("sidequests_analytics.dashboard", run_name="__main__")
