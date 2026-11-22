@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 .venv/
 /bq3_last_run.json
+
+# Never commit local Streamlit database credentials.
+/.streamlit/secrets.toml
