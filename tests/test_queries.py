@@ -11,6 +11,7 @@ from sidequests_analytics.queries import (
     BQ6_ABANDONMENT_BASE_SQL,
     BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
+    BQ8_EXPERIENCED_COHORT_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
     USER_FEATURES_SQL,
@@ -229,3 +230,50 @@ def test_bq1_ranks_modules_per_app_version_and_uses_device_event_time():
     assert "partition by f.app_version" in sql
     assert "module_rank" in sql
     assert "occurred_at_millis" in sql
+
+def test_bq8_sprint4_requires_two_completions_before_exposure():
+    sql = BQ8_EXPERIENCED_COHORT_SQL.lower()
+    assert "uq.completed_at < e.occurred_at" in sql
+    assert "count(distinct uq.id)" in sql
+    assert ">= 2" in sql
+    assert "metadata->>'variant' in ('control', 'diverse')" in sql
+    assert "date_trunc" not in sql  # This cohort compares arms across 30 days, not weeks.
+
+
+def test_bq8_sprint4_deduplicates_mature_acceptance_and_return():
+    sql = BQ8_EXPERIENCED_COHORT_SQL.lower()
+    assert "distinct on (user_id, session_id, batch_id, quest_id)" in sql
+    assert "distinct on (user_id, session_id, quest_id)" in sql
+    assert "recommendation_accepted" in sql
+    assert "first_shown_at <= now() - interval '24 hours'" in sql
+    assert "r.session_id is distinct from f.session_id" in sql
+    assert "return_rate_24h_pct" in sql
+    assert "nullif(rc.mature_return_users, 0)" in sql
+
+
+def test_bq8_sprint4_sql_is_read_only():
+    import re
+    sql = BQ8_EXPERIENCED_COHORT_SQL.lower()
+    # Remove comments before checking data modification tokens.
+    uncommented = re.sub(r"--[^\\n]*", "", sql)
+    assert not re.search(r"\\b(insert|update|delete|drop|truncate|alter|grant|create)\\b", uncommented)
+    assert "from public.analytics_events" in sql
+    assert "from public.user_quests" in sql
+
+
+def test_bq8_sprint4_local_launcher_default_is_read_only():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "scripts" / "run_bq8_local.py").read_text()
+    assert 'parser.add_argument("--publish", action="store_true"' in src
+    assert 'if args.publish:' in src
+    assert 'store_bq_result(engine, "BQ8_EXPERIENCED", experienced)' in src
+    compile(src, "run_bq8_local.py", "exec")
+
+
+def test_bq8_sprint4_powershell_allows_existing_venv_from_other_checkout():
+    from pathlib import Path
+    wrapper = (Path(__file__).resolve().parents[1] / "scripts" / "run-bq8-local.ps1").read_text()
+    assert "[string]$PythonExe" in wrapper
+    assert "Test-Path -LiteralPath $PythonExe -PathType Leaf" in wrapper
+    assert "if ($PythonExe)" in wrapper
+    assert "& $python -B @argsForPython" in wrapper

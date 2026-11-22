@@ -15,6 +15,7 @@ from .queries import (
     BQ6_ABANDONMENT_BASE_SQL,
     BQ7_GROUP_VS_INDIVIDUAL_QUESTS_SQL,
     BQ8_RECOMMENDATION_DIVERSITY_SQL,
+    BQ8_EXPERIENCED_COHORT_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
     USER_FEATURES_SQL,
@@ -45,6 +46,13 @@ def compute_bq7(engine) -> list[dict]:
 
 def compute_bq8(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ8_RECOMMENDATION_DIVERSITY_SQL), engine))
+
+
+def compute_bq8_experienced(engine) -> list[dict]:
+    """BQ8 original cohort, filtered to users with >=2 previous completions."""
+    frame = pd.read_sql(text(BQ8_EXPERIENCED_COHORT_SQL), engine)
+    # Numeric NaN must become JSON null; pandas numeric columns otherwise retain NaN.
+    return frame.astype(object).where(pd.notnull(frame), None).to_dict(orient="records")
 
 
 def compute_bq9(engine) -> list[dict]:
@@ -172,6 +180,9 @@ def run() -> None:
         bq8 = compute_bq8(engine)
         store_bq_result(engine, "BQ8", bq8)
         print(f"stored BQ8 rows: {len(bq8)}")
+        experienced = compute_bq8_experienced(engine)
+        store_bq_result(engine, "BQ8_EXPERIENCED", experienced)
+        print(f"stored BQ8_EXPERIENCED rows: {len(experienced)}")
 
     if args.job in ("all", "bq9"):
         bq9 = compute_bq9(engine)
