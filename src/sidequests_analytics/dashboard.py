@@ -11,11 +11,18 @@ st.set_page_config(page_title="Sidequests Analytics", layout="wide")
 st.title("Sidequests · BQ Dashboard")
 st.caption("Shared Sprint 2 and Sprint 3 analytics results from the Sidequests database")
 
-engine = get_engine()
+try:
+    engine = get_engine()
+except RuntimeError:
+    st.error(
+        "No database connection configured. Run scripts/configure_bq8_dashboard.py "
+        "once to create the local Streamlit secrets file, or set DATABASE_URL."
+    )
+    st.stop()
 
 # Sprint 4 BQ8: a reproducible live read-only view. It does not depend on
 # the BQ8_EXPERIENCED result having been published in analytics.bq_results.
-st.subheader("Sprint 4 · BQ8 — Recommendation Diversity")
+st.markdown("### Sprint 4 · BQ8 — Recommendation Diversity")
 st.caption(
     "Live PostgreSQL analysis · Users with at least two completions before "
     "exposure · Server experiment: control vs diverse"
@@ -77,7 +84,7 @@ else:
     st.info("There are no completed read-only BQ8 query results for this session.")
 
 st.divider()
-st.subheader("Previously stored Business Question results")
+st.markdown("### Previously stored Business Question results")
 
 rows = pd.read_sql(
     text(
