@@ -115,7 +115,10 @@ From PowerShell in a clean `Sidequests-Analytics-BQ8` checkout:
 
 ```powershell
 cd C:\ANDES\Sidequests-Analytics-BQ8
-git pull --ff-only origin feature/s4-bq8-experienced-analytics
+# The original checkout was created with --single-branch, so fetch
+# this new review branch explicitly without discarding local work.
+git fetch origin feature/s4-bq8-live-dashboard:refs/remotes/origin/feature/s4-bq8-live-dashboard
+git switch --track origin/feature/s4-bq8-live-dashboard
 
 # Do this just ONCE, on your own trusted PC:
 & 'C:\ANDES\Sidequests-Analytics\.venv\Scripts\python.exe' .\scripts\configure_bq8_dashboard.py
