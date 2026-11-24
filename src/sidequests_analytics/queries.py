@@ -839,3 +839,6 @@ from pathlib import Path as _Path
 BQ8_EXPERIENCED_COHORT_SQL = (
     _Path(__file__).resolve().parent / "sql" / "bq8_experienced.sql"
 ).read_text(encoding="utf-8")
+
+
+BQ2_GROUP_CHALLENGES_SQL = (_Path(__file__).resolve().parent / "sql" / "bq2_group_challenges.sql").read_text(encoding="utf-8")

@@ -9,6 +9,7 @@ from .db import get_engine
 from .bq3 import summarize_bq3
 from .queries import (
     BQ1_MODULE_FAILURES_AFTER_RESUME_SQL,
+    BQ2_GROUP_CHALLENGES_SQL,
     BQ3_ONBOARDING_DROPOFF_SQL,
     BQ4_INSTANT_PLAN_SQL,
     BQ5_PERSONALIZED_RECOMMENDATION_SQL,
@@ -29,6 +30,18 @@ def _records(df: pd.DataFrame) -> list[dict]:
 
 def compute_bq1(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ1_MODULE_FAILURES_AFTER_RESUME_SQL), engine))
+
+
+def bq2_schema_ready(engine) -> bool:
+    with engine.connect() as conn:
+        return bool(conn.execute(text(
+            "select to_regclass('sidequests_group_private.operations') is not null"
+        )).scalar())
+
+
+def compute_bq2(engine) -> list[dict]:
+    frame = pd.read_sql(text(BQ2_GROUP_CHALLENGES_SQL), engine)
+    return frame.astype(object).where(pd.notnull(frame), None).to_dict(orient="records")
 
 
 def compute_bq3(engine, observation_hours=24.0, as_of=None) -> list[dict]:
@@ -134,7 +147,7 @@ def run() -> None:
                         help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
-        choices=("all", "bq1", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "features"),
+        choices=("all", "bq1", "bq2", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "features"),
         default="all",
     )
     args = parser.parse_args()
@@ -149,6 +162,16 @@ def run() -> None:
         bq1 = compute_bq1(engine)
         store_bq_result(engine, "BQ1", bq1)
         print(f"stored BQ1 rows: {len(bq1)}")
+
+    if args.job in ("all", "bq2"):
+        if bq2_schema_ready(engine):
+            bq2 = compute_bq2(engine)
+            store_bq_result(engine, "BQ2", bq2)
+            print(f"stored BQ2 rows: {len(bq2)}")
+        elif args.job == "bq2":
+            raise RuntimeError("BQ2 backend migration has not been applied.")
+        else:
+            print("skipped BQ2: backend migration not installed")
 
     if args.job in ("all", "bq3"):
         bq3 = compute_bq3(engine, observation_hours=args.bq3_observation_hours)
