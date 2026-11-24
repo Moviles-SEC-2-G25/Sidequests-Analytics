@@ -44,6 +44,18 @@
   are excluded from the Kotlin v2 result. Flutter needs compatible versioned
   instrumentation before it can be included; historical rows are not changed.
 
+- BQ12 (Type 4) sponsored vs non-sponsored acceptance and completion, by sponsor
+  business category and declared interest: `BQ12_SPONSORED_PERFORMANCE_SQL`,
+  `BQ12_WEEKLY_TREND_SQL`, the `bq12` pipeline job (stores `BQ12` and
+  `BQ12_WEEKLY`), the Streamlit view and chart-ready Supabase views
+  (`docs/BQ12_SUPABASE_VIEWS.sql`). `tests/test_bq12_postgres.py` runs it against a
+  throwaway PostgreSQL with events shaped like both clients'. On 2026-11-24 it was
+  also run end to end in a local PostgreSQL with the real Backend migrations
+  001–010, the seed and the CLI job. Pending: apply Backend migration 010
+  (`sponsor_business_category` and the sponsored demo quests) to the hosted
+  project, collect real impressions from both apps, run the job against hosted
+  Supabase and create the views there. Flutter shows the sponsored badge from the
+  `lucas_bq12_sprint4` branch; Kotlin already showed it.
 - BQ7 query and `bq7` pipeline job: compares adoption and completion of group-labelled versus individual quests over the last 30 days, using `quests.is_group` and `user_quests`. The output explicitly distinguishes quest classification from verified group participation, which is not represented in the current schema.
 
 ## Planned / incomplete

@@ -138,6 +138,34 @@ linked to its impression, it must carry the same `session_id` and `quest_id`
 as the `recommendation_shown` event. Completion and abandonment come from
 `public.user_quests`.
 
+## BQ12 sponsored quest performance
+
+BQ12 needs no new event or metadata field. It reuses BQ9's sources:
+`recommendation_shown` / `recommendation_accepted` (linked by `user_id` +
+`session_id` + `quest_id`, accepted within 24 hours of the first impression) and
+`public.user_quests` for completion. Both clients already queue these events offline
+with their original `occurred_at` (Kotlin's recommendation outbox, Flutter's
+`AnalyticsTracker`), which the 24-hour link and the 30-day window depend on.
+
+Sponsorship is read from the catalogue through `quest_id`, never from the event:
+
+- `quests.is_sponsored` (boolean) and `quests.sponsor_name`.
+- `quests.sponsor_business_category` (Sidequests-Backend migration 010), the
+  sponsor's business type. One of `fitness_and_recreation`, `food_and_beverage`,
+  `arts_and_culture`, `education_and_books`, `health_and_wellness`, `retail`,
+  `events_and_entertainment`, `community_and_nonprofit` (CHECK-enforced), or null.
+  Null on a sponsored quest is reported as `unspecified`; non-sponsored quests are
+  always `none`. Kotlin's `QuestDto.sponsorBusinessCategory` and Flutter's
+  `Quest.sponsorBusinessCategory` read this column.
+
+Declared interests come from `user_preferences.interests` (`text[]`). The two
+clients offer the same seven values with different casing (Kotlin `Outdoors`,
+Flutter `outdoors`); BQ12 lowercases and trims them, so they are one interest.
+
+UI rule shared by both clients: a quest with `is_sponsored = true` is always shown
+labelled as sponsored (Kotlin `SPONSORED` pill; Flutter `Patrocinada` badge on
+cards and "Patrocinada por <sponsor_name>" in the detail view).
+
 ## BQ10 location mode events
 
 BQ10 uses two selection events:

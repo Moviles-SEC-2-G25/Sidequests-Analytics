@@ -19,6 +19,9 @@ Implemented/selected Business Questions:
 - BQ8 — Recommendation Diversity (Type 3)
 - BQ9 — Quest Category Performance (Type 3)
 - BQ10 — Location-Independent Mode Usage (Type 3)
+- BQ12 — Sponsored Quest Performance (Type 4): `python -m sidequests_analytics.pipeline --job bq12`
+  (from `src/`, with `DATABASE_URL`); definitions in `docs/BUSINESS_QUESTIONS.md`,
+  Supabase charts in `docs/BQ12_SUPABASE_DASHBOARD.md`
 
 ## Shared pipeline
 
