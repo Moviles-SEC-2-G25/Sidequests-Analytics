@@ -9,18 +9,20 @@ def render_bq2(frame: pd.DataFrame) -> None:
     operations = frame[frame["row_type"] == "operation"].copy()
     groups = frame[frame["row_type"] == "challenge"].copy()
     st.caption("Each unique server-received request counts once, including handled failures. "
-               "Requests lost before reaching the server are not measured. "
+               "Unconfirmed client requests are counted separately, not added to confirmed failures. "
                "Participants include the creator and count distinct memberships per challenge.")
     if not groups.empty:
         st.metric("Participant memberships (last 30 days)", int(groups["participants"].sum()))
+        st.metric("Non-creator participants", int(groups["joined_non_creators"].sum()))
         st.metric("Challenges", len(groups))
-        st.dataframe(groups[["quest_title", "active", "participants", "completed_participants"]],
+        st.dataframe(groups[["quest_title", "active", "participants", "joined_non_creators", "completed_participants"]],
                      hide_index=True, use_container_width=True)
     else:
         st.info("No challenges created in the observation window.")
     if not operations.empty:
-        st.write("Server operations")
-        st.dataframe(operations[["operation", "attempts", "successes", "failures", "failure_rate_pct"]],
+        st.write("Server operations and unconfirmed client requests")
+        st.caption("Failure rate uses server-received requests only. No server record means the client reported an uncertain response and no matching operation is currently recorded; it is not proof of a server failure.")
+        st.dataframe(operations[["operation", "attempts", "successes", "failures", "failure_rate_pct", "client_unconfirmed", "no_server_record"]],
                      hide_index=True, use_container_width=True)
         if operations["attempts"].sum() > 0:
             counts = operations.set_index("operation")[["successes", "failures"]].apply(pd.to_numeric)
