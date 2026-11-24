@@ -106,6 +106,23 @@ st.caption("Shared Sprint 2 and Sprint 3 analytics results from the Sidequests d
 
 engine = get_engine()
 
+with st.expander("Sprint 4 · BQ2 — Group Challenge Module"):
+    st.caption("Live, read-only comparison of server-received requests in the last 30 days.")
+    if st.button("Load / refresh BQ2", key="refresh_bq2"):
+        try:
+            from .pipeline import bq2_schema_ready, compute_bq2
+            if bq2_schema_ready(engine):
+                st.session_state["bq2_live"] = compute_bq2(engine)
+            else:
+                st.session_state.pop("bq2_live", None)
+                st.warning("The shared group challenge backend has not been deployed.")
+        except Exception:
+            st.session_state.pop("bq2_live", None)
+            st.error("BQ2 could not be loaded. Check database access and migration status.")
+    if "bq2_live" in st.session_state:
+        from .bq2_dashboard import render_bq2
+        render_bq2(pd.DataFrame(st.session_state["bq2_live"]))
+
 rows = pd.read_sql(
     text(
         """
@@ -131,6 +148,10 @@ else:
             payload = json.loads(payload)
         data = payload.get("rows", [])
         frame = pd.DataFrame(data)
+        if row["bq_key"] == "BQ2":
+            from .bq2_dashboard import render_bq2
+            render_bq2(frame)
+
         if row["bq_key"] == "BQ3" and data and data[0].get("schema_version") == 2:
             bq3_frame = frame.sort_values("step_order").set_index("step_name")
             st.caption(f"Platform: {data[0]['platform']} · Initial instrumented setups: {data[0]['journeys_started']} · Observation horizon: {data[0]['observation_hours']:g} hours")

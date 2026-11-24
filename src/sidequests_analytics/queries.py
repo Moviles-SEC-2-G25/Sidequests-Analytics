@@ -1236,3 +1236,5 @@ from rated r
 order by r.week_start, case r.sponsor_type when 'sponsored' then 1 else 2 end;
 """
 )
+
+BQ2_GROUP_CHALLENGES_SQL = (_Path(__file__).resolve().parent / "sql" / "bq2_group_challenges.sql").read_text(encoding="utf-8")
