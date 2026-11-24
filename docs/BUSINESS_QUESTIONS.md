@@ -101,6 +101,79 @@ then acceptance rate. No extra event fields are required.
 
 How is location-independent mode used across sessions/context conditions?
 
+## BQ12 — Sponsored Quest Performance (Sprint 4)
+**Type 4 (benefits from data)**
+
+What is the acceptance and completion rate of sponsored Side-Quests compared with
+non-sponsored ones, segmented by business category and by the user's declared
+interests?
+
+Sidequests earns money from Sponsored Side-Quests: local businesses, organizations
+and events pay for their activities to appear as quests, always labelled as
+sponsored and only when they fit the user's context. BQ12 is the evidence sold to
+sponsors ("quests like yours are accepted X % of the time by students interested in
+Y") and the guardrail that sponsored content doesn't make the experience worse than
+ordinary content.
+
+Same two-stage funnel and 30-day window as BQ9:
+
+- **Acceptance rate** = accepted unique impressions / unique impressions. An
+  impression is one `recommendation_shown` per user + session + quest (list reloads
+  and Kotlin card re-renders count once). It is accepted when a
+  `recommendation_accepted` of the same user, session and quest follows within 24
+  hours. Both clients only send `recommendation_accepted` once Supabase saved the
+  attempt.
+- **Completion rate** = completed attempts / accepted attempts in `user_quests`
+  (skips excluded, whether the attempt came from a recommendation or the catalogue).
+  Also reported: resolved completion rate (completed / (completed + abandoned)) and
+  abandonment rate.
+- **Sponsorship** comes from the catalogue: `quests.is_sponsored` and
+  `quests.sponsor_business_category` (Backend migration 010), through `quest_id`.
+  No event field is needed, so both clients' history counts. A campaign ends with
+  `is_active = false`; flipping `is_sponsored` would reclassify its history.
+- **Business category:** the sponsor's (`food_and_beverage`, `retail`...), not the
+  activity's. Non-sponsored quests go under the explicit `none`, the baseline every
+  category is compared with; a sponsored quest without one goes under
+  `unspecified`. Using the activity category for non-sponsored quests would mix two
+  vocabularies and invent sponsor segments. The activity category is still reported
+  (`quest_category` level) to compare like with like, e.g. sponsored Movement vs
+  non-sponsored Movement.
+- **Declared interests** come from `user_preferences.interests`, lowercased and
+  deduplicated (Kotlin saves `Outdoors`, Flutter `outdoors`). A user with several
+  interests counts once in each of them, so interest rows don't add up to the
+  total; users without interests are `none_declared`. They are the interests the
+  user has now, not at the moment of the impression.
+- **Interest match:** an impression or attempt is `matched` when the quest's
+  category or one of its tags equals one of the user's interests (the rule of
+  `recommend_quests`), `not_matched` otherwise, `none_declared` without interests.
+- **Sample threshold:** a rate is null when its denominator is below 10 impressions
+  (acceptance) or 5 accepted attempts (completion), and always null without any
+  exposure, never 0 %. Counts and distinct users are always reported, with
+  `acceptance_sample_ok` / `completion_sample_ok`. Both thresholds are job
+  parameters.
+- **Gap:** `acceptance_rate_vs_non_sponsored_pp` / `completion_rate_vs_non_sponsored_pp`,
+  in percentage points, against the non-sponsored quests of the same segment (same
+  interest, same activity category, same match; for a business category, all
+  non-sponsored quests).
+
+`BQ12_SPONSORED_PERFORMANCE_SQL` stores one row per segment as `BQ12`, with
+`segment_level` = `overall`, `business_category`, `quest_category`,
+`interest_match`, `interest` or `business_category_x_interest`. Both sponsor types
+of `overall` and every business category of the active catalogue always appear,
+exposed or not. `BQ12_WEEKLY_TREND_SQL` stores the last 12 ISO weeks (current one
+included) per sponsor type as `BQ12_WEEKLY`; recent weeks still have open attempts,
+so their completion rate is provisional.
+
+Limitations: impressions are not measured the same way on both clients (Kotlin logs
+a card when it enters the viewport, Flutter logs the whole list when it loads),
+which shifts each platform's absolute acceptance but not the sponsored vs
+non-sponsored comparison inside it. The comparison is observational: sponsored and
+non-sponsored quests differ in more than sponsorship (place, cost, novelty), so a
+gap is not a causal effect.
+
+Charts: the Streamlit dashboard, and the Supabase views in
+[BQ12_SUPABASE_DASHBOARD.md](BQ12_SUPABASE_DASHBOARD.md).
+
 ## Rule
 
 A BQ only counts for Sprint 2 when its logic is implemented and demonstrated against real analytics data; documentation alone is not sufficient.

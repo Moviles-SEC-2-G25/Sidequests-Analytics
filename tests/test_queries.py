@@ -14,6 +14,8 @@ from sidequests_analytics.queries import (
     BQ8_EXPERIENCED_COHORT_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
+    BQ12_SPONSORED_PERFORMANCE_SQL,
+    BQ12_WEEKLY_TREND_SQL,
     USER_FEATURES_SQL,
 )
 
@@ -277,3 +279,72 @@ def test_bq8_sprint4_powershell_allows_existing_venv_from_other_checkout():
     assert "Test-Path -LiteralPath $PythonExe -PathType Leaf" in wrapper
     assert "if ($PythonExe)" in wrapper
     assert "& $python -B @argsForPython" in wrapper
+
+
+def test_bq12_reuses_bq9_impression_and_attempt_definitions():
+    for sql in (BQ12_SPONSORED_PERFORMANCE_SQL.lower(), BQ12_WEEKLY_TREND_SQL.lower()):
+        assert "event_type = 'recommendation_shown'" in sql
+        assert "group by ae.user_id, ae.session_id, ae.quest_id" in sql
+        assert "event_type = 'recommendation_accepted'" in sql
+        assert "a.session_id is not distinct from s.session_id" in sql
+        assert "a.occurred_at >= s.first_shown_at" in sql
+        assert "a.occurred_at < s.first_shown_at + interval '1 day'" in sql
+        assert "from public.user_quests uq" in sql
+        assert "uq.status <> 'skipped'" in sql
+
+
+def test_bq12_classifies_sponsorship_from_the_catalogue():
+    sql = BQ12_SPONSORED_PERFORMANCE_SQL.lower()
+    assert "q.is_sponsored" in sql
+    assert "q.sponsor_business_category" in sql
+    assert "when not q.is_sponsored then 'none'" in sql
+    assert "'unspecified'" in sql
+    assert "metadata->>'is_sponsored'" not in sql  # no client field needed
+
+
+def test_bq12_segments_by_declared_interest_without_double_counting():
+    sql = BQ12_SPONSORED_PERFORMANCE_SQL.lower()
+    assert "from public.user_preferences up" in sql
+    assert "lower(btrim(i.value))" in sql
+    assert "'none_declared'" in sql
+    assert "count(distinct fact_id)" in sql
+    assert "grouping sets" in sql
+    for level in ("'overall'", "'business_category'", "'quest_category'",
+                  "'interest_match'", "'interest'", "'business_category_x_interest'"):
+        assert level in sql
+
+
+def test_bq12_rates_are_null_below_the_sample_threshold():
+    for sql in (BQ12_SPONSORED_PERFORMANCE_SQL.lower(), BQ12_WEEKLY_TREND_SQL.lower()):
+        assert ":min_impressions" in sql
+        assert ":min_attempts" in sql
+        assert "case when c.impressions >= p.min_impressions" in sql
+        assert "case when c.accepted_attempts >= p.min_attempts" in sql
+        assert "acceptance_sample_ok" in sql
+    sql = BQ12_SPONSORED_PERFORMANCE_SQL.lower()
+    assert "make_interval(days => cast(:window_days as integer))" in sql
+    assert "acceptance_rate_vs_non_sponsored_pp" in sql
+    assert "completion_rate_vs_non_sponsored_pp" in sql
+
+
+def test_bq12_weekly_trend_keeps_empty_weeks():
+    sql = BQ12_WEEKLY_TREND_SQL.lower()
+    assert "generate_series" in sql
+    assert "date_trunc('week'" in sql
+    assert ":trend_weeks" in sql
+
+
+def test_bq12_sql_is_read_only():
+    import re
+    for sql in (BQ12_SPONSORED_PERFORMANCE_SQL.lower(), BQ12_WEEKLY_TREND_SQL.lower()):
+        uncommented = re.sub(r"--[^\n]*", "", sql)
+        assert not re.search(r"\b(insert|update|delete|drop|truncate|alter|grant|create)\b", uncommented)
+        assert "__window_start__" not in sql
+
+
+def test_bq12_job_is_wired_into_the_pipeline():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "src" / "sidequests_analytics" / "pipeline.py").read_text()
+    assert '"bq12"' in src
+    assert 'store_bq_result(engine, "BQ12", bq12)' in src
+    assert 'store_bq_result(engine, "BQ12_WEEKLY", weekly)' in src
