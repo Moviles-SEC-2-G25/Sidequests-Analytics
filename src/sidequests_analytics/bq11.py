@@ -20,7 +20,7 @@ with mapped_blocks(block_id, commercial_block) as (
     join mapped_blocks b on b.block_id = e.metadata ->> 'block_id'
     where e.event_type = 'bq11_commercial_block_completed'
         and e.metadata ->> 'schema_version' = '1'
-        and e.metadata ->> 'platform' = 'kotlin'
+        and e.metadata ->> 'platform' in ('kotlin', 'flutter')
         and uq.status = 'completed'
         and uq.completed_at >= now() - interval '30 days'
         and uq.completed_at <= now()

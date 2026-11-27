@@ -285,6 +285,27 @@ or a non-fatal failure reported by a module. Metadata:
   expected offline failures can be separated from real bugs
 - `app_version` (text), `occurred_at_millis` (integer)
 
+## BQ11 weekend commercial-block event (Kotlin and Flutter, Sprint 4)
+
+`bq11_commercial_block_completed` — a physical quest was completed on a Bogotá
+weekend after more than 20 observed minutes in one mapped commercial block. Both
+clients send the same contract: Kotlin from the Android app, Flutter from
+`QuestViewModel` with `platform` = `flutter`, reading the location every 15
+seconds. The `user_id` and `quest_id` columns must match the attempt.
+Metadata:
+
+- `schema_version` = `1`
+- `platform`: `kotlin` or `flutter`; any other value is ignored by BQ11
+- `attempt_id` (uuid string) — `user_quests.id`; an attempt counts once however
+  many events report it
+- `event_id` (uuid string)
+- `block_id`: `usaquen-cra6a-c119` or `paloquemao-market`
+- `weekend_start` (`YYYY-MM-DD`, the Saturday of the Bogotá weekend)
+- `observed_ms` (integer) — observed time in the block
+
+No coordinates are sent in the event, from either client. Measurement rules are in
+[BQ11_WEEKEND_BLOCKS.md](BQ11_WEEKEND_BLOCKS.md).
+
 ## BQ14 social comfort events (Kotlin, Sprint 4)
 
 Sent through the same durable SQLite + WorkManager queue as BQ1, so events recorded in
