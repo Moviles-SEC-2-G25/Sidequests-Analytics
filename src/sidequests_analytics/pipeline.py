@@ -22,6 +22,7 @@ from .queries import (
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
     BQ12_SPONSORED_PERFORMANCE_SQL,
     BQ12_WEEKLY_TREND_SQL,
+    BQ14_SOCIAL_COMFORT_SQL,
     USER_FEATURES_SQL,
 )
 
@@ -44,6 +45,11 @@ def _json_records(df: pd.DataFrame) -> list[dict]:
 
 def compute_bq1(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ1_MODULE_FAILURES_AFTER_RESUME_SQL), engine))
+
+
+def compute_bq14(engine) -> list[dict]:
+    frame = pd.read_sql(text(BQ14_SOCIAL_COMFORT_SQL), engine)
+    return _json_records(frame)
 
 
 def bq2_schema_ready(engine) -> bool:
@@ -199,7 +205,7 @@ def run() -> None:
                         help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
-        choices=("all", "bq1", "bq2", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "bq11", "bq12", "features"),
+        choices=("all", "bq1", "bq2", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "bq11", "bq12", "bq14", "features"),
         default="all",
     )
     parser.add_argument("--bq12-window-days", type=int, default=BQ12_WINDOW_DAYS,
@@ -299,6 +305,11 @@ def run() -> None:
         )
         store_bq_result(engine, "BQ12_WEEKLY", weekly)
         print(f"stored BQ12_WEEKLY rows: {len(weekly)}")
+
+    if args.job in ("all", "bq14"):
+        bq14 = compute_bq14(engine)
+        store_bq_result(engine, "BQ14", bq14)
+        print(f"stored BQ14 rows: {len(bq14)}")
 
 
 if __name__ == "__main__":

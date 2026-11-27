@@ -284,3 +284,26 @@ or a non-fatal failure reported by a module. Metadata:
 - `online` (boolean) — validated internet at the moment of the failure, so
   expected offline failures can be separated from real bugs
 - `app_version` (text), `occurred_at_millis` (integer)
+
+## BQ14 social comfort events (Kotlin, Sprint 4)
+
+Sent through the same durable SQLite + WorkManager queue as BQ1, so events recorded in
+airplane mode are uploaded after reconnecting. Stored in `public.analytics_events`.
+
+`bq14_social_comfort_session` — once per sign-in, after the account's saved settings are
+restored.
+
+`bq14_social_comfort_changed` — the user changed the comfort level or the
+"Adapt my Smart Picks" switch. Adds `change` = `level` or `adaptation`.
+
+Metadata of both:
+
+- `bq` = `BQ14`
+- `arm`: `adapt_default` or `control` (stable 32-bit FNV-1a hash of the user id)
+- `comfort`: `low`, `medium` or `high`
+- `low_willingness` (boolean) — comfort is `low` or `medium`
+- `adaptation_active` (boolean) — quests above the level are hidden from Smart Picks
+- `adaptation_source`: `user` (explicit choice) or `default` (set by the arm)
+- `online` (boolean), `app_version` (text)
+- `account_user_id` (text) — must equal `user_id`; rows that differ are ignored
+- `occurred_at_millis` (integer, device time)
