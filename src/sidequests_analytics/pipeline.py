@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from .db import get_engine
 from .bq3 import summarize_bq3
+from .bq11 import compute_bq11
 from .queries import (
     BQ1_MODULE_FAILURES_AFTER_RESUME_SQL,
     BQ2_GROUP_CHALLENGES_SQL,
@@ -198,7 +199,7 @@ def run() -> None:
                         help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
-        choices=("all", "bq1", "bq2", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "bq12", "features"),
+        choices=("all", "bq1", "bq2", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "bq11", "bq12", "features"),
         default="all",
     )
     parser.add_argument("--bq12-window-days", type=int, default=BQ12_WINDOW_DAYS,
@@ -275,6 +276,11 @@ def run() -> None:
         bq10 = compute_bq10(engine)
         store_bq_result(engine, "BQ10", bq10)
         print(f"stored BQ10 rows: {len(bq10)}")
+
+    if args.job in ("all", "bq11"):
+        bq11 = compute_bq11(engine)
+        store_bq_result(engine, "BQ11", bq11)
+        print(f"stored BQ11 rows: {len(bq11)}")
 
     if args.job in ("all", "bq12"):
         bq12 = compute_bq12(

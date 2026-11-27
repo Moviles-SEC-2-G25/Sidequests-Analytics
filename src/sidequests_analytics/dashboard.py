@@ -106,6 +106,20 @@ st.caption("Shared Sprint 2 and Sprint 3 analytics results from the Sidequests d
 
 engine = get_engine()
 
+with st.expander("Sprint 4 · BQ11 — Weekend commercial blocks"):
+    from .bq11 import compute_bq11
+    from .bq11_dashboard import render_bq11
+
+    st.caption("Run the current aggregate without saving a new dashboard result.")
+    if st.button("Load / refresh BQ11", key="refresh_bq11"):
+        try:
+            st.session_state["bq11_live"] = compute_bq11(engine)
+        except Exception:
+            st.session_state.pop("bq11_live", None)
+            st.error("BQ11 could not be loaded. Check the database connection and access.")
+    if "bq11_live" in st.session_state:
+        render_bq11(st.session_state["bq11_live"])
+
 with st.expander("Sprint 4 · BQ2 — Group Challenge Module"):
     st.caption("Live, read-only comparison of server-received requests in the last 30 days.")
     if st.button("Load / refresh BQ2", key="refresh_bq2"):
@@ -259,6 +273,10 @@ else:
                 )
             else:
                 st.warning("BQ9 is missing the fields needed for the completion chart.")
+
+        if row["bq_key"] == "BQ11":
+            render_bq11(data)
+            continue
 
         if row["bq_key"] == "BQ12":
             render_bq12(data)
