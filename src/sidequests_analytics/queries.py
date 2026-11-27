@@ -1238,3 +1238,115 @@ order by r.week_start, case r.sponsor_type when 'sponsored' then 1 else 2 end;
 )
 
 BQ2_GROUP_CHALLENGES_SQL = (_Path(__file__).resolve().parent / "sql" / "bq2_group_challenges.sql").read_text(encoding="utf-8")
+
+# Sprint 4 BQ14 (Carlos, Kotlin, Type 5): social comfort personalization.
+# For users with low willingness to join socially demanding activities (comfort low or
+# medium), does adapting Smart Picks to their social exposure level increase completion
+# and 7-day return compared with showing non-personalized social challenges?
+BQ14_SOCIAL_COMFORT_SQL = """
+with bq14_events as (
+    select
+        user_id,
+        lower(coalesce(metadata->>'comfort', 'high')) as comfort,
+        coalesce(metadata->>'arm', 'unknown') as arm,
+        coalesce((metadata->>'adaptation_active')::boolean, false) as adaptation_active,
+        coalesce(
+            to_timestamp((metadata->>'occurred_at_millis')::bigint / 1000.0),
+            occurred_at
+        ) as event_time
+    from public.analytics_events
+    where event_type in ('bq14_social_comfort_session', 'bq14_social_comfort_changed')
+      and metadata->>'bq' = 'BQ14'
+      -- events queued offline and uploaded under another signed-in account are ignored
+      and metadata->>'account_user_id' = user_id::text
+),
+recent as (
+    select * from bq14_events
+    where event_time >= now() - interval '30 days'
+),
+exposed as (
+    -- BQ14 population: users whose comfort was low or medium at some point in the window
+    select user_id, min(event_time) as first_low_at
+    from recent
+    where comfort in ('low', 'medium')
+    group by user_id
+),
+latest as (
+    select distinct on (user_id) user_id, arm, adaptation_active
+    from recent
+    order by user_id, event_time desc
+),
+attempts as (
+    -- BQ9 definition: one user_quests row = one attempt, skips excluded
+    select
+        e.user_id,
+        count(*) as accepted_attempts,
+        count(*) filter (where uq.status = 'completed') as completed_attempts
+    from exposed e
+    join public.user_quests uq
+      on uq.user_id = e.user_id
+     and uq.accepted_at >= e.first_low_at
+     and uq.status <> 'skipped'
+    group by e.user_id
+),
+returns as (
+    -- return = any app activity on a later calendar day within 7 days of the first exposure;
+    -- only users exposed 7+ days ago have a complete window
+    select
+        e.user_id,
+        e.first_low_at <= now() - interval '7 days' as return_eligible,
+        exists (
+            select 1
+            from public.analytics_events a
+            where a.user_id = e.user_id
+              and a.occurred_at::date > e.first_low_at::date
+              and a.occurred_at < e.first_low_at + interval '7 days'
+        ) as returned_7d
+    from exposed e
+),
+per_user as (
+    select
+        e.user_id,
+        l.arm,
+        l.adaptation_active,
+        coalesce(a.accepted_attempts, 0) as accepted_attempts,
+        coalesce(a.completed_attempts, 0) as completed_attempts,
+        r.return_eligible,
+        r.returned_7d
+    from exposed e
+    join latest l using (user_id)
+    join returns r using (user_id)
+    left join attempts a using (user_id)
+),
+grouped as (
+    -- as_treated: adaptation active in the latest event (what the user actually saw)
+    select 'as_treated' as comparison,
+           case when adaptation_active then 'adapted' else 'not_adapted' end as cohort,
+           accepted_attempts, completed_attempts, return_eligible, returned_7d
+    from per_user
+    union all
+    -- intent_to_treat: hash-assigned arm, which only sets the default of the switch
+    select 'intent_to_treat' as comparison,
+           case when arm = 'adapt_default' then 'adapted' else 'not_adapted' end as cohort,
+           accepted_attempts, completed_attempts, return_eligible, returned_7d
+    from per_user
+)
+select
+    comparison,
+    cohort,
+    count(*) as users,
+    sum(accepted_attempts) as accepted_attempts,
+    sum(completed_attempts) as completed_attempts,
+    round(100.0 * sum(completed_attempts) / nullif(sum(accepted_attempts), 0), 2) as completion_rate_pct,
+    count(*) filter (where return_eligible) as return_eligible_users,
+    count(*) filter (where return_eligible and returned_7d) as returned_users,
+    round(
+        100.0 * count(*) filter (where return_eligible and returned_7d)
+        / nullif(count(*) filter (where return_eligible), 0),
+        2
+    ) as return_rate_7d_pct,
+    count(*) < 10 as small_sample
+from grouped
+group by comparison, cohort
+order by comparison, cohort;
+"""

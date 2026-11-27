@@ -284,4 +284,8 @@ else:
         if row["bq_key"] == "BQ12_WEEKLY":
             render_bq12_weekly(frame)
 
+        if row["bq_key"] == "BQ14":
+            from .bq14_dashboard import render_bq14
+            render_bq14(frame)
+
         st.dataframe(frame, use_container_width=True)

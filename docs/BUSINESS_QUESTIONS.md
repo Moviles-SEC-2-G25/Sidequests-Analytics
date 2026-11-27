@@ -212,3 +212,26 @@ result addresses the experienced cohort explicitly:
   quest attempts are performed by this runner.
 
 See [BQ8 Sprint 4 evaluation and command](BQ8_SPRINT4.md).
+
+## BQ14 — Social Comfort Personalization (Sprint 4, Kotlin)
+
+**Owner:** Carlos Poveda · **Type 5** (combined: app feature + analytics) · Sprint 1 list 6.5
+
+> For users with low willingness to participate in socially demanding activities, does
+> adapting Side-Quest recommendations to their preferred social exposure level increase
+> completion and return rates compared with showing non-personalized social challenges?
+
+- **Population:** users whose comfort level was `low` or `medium` in a BQ14 event of the
+  last 30 days (first such event = first exposure).
+- **Comparisons:** `as_treated` (adaptation active in the user's latest event: what they
+  actually saw) and `intent_to_treat` (hash-assigned `adapt_default` / `control` arm,
+  which only sets the default of the "Adapt my Smart Picks" switch).
+- **Completion:** completed / accepted `user_quests` attempts since the first exposure,
+  skips excluded (BQ9 definition).
+- **7-day return:** any `analytics_events` row on a later calendar day within 7 days of
+  the first exposure. Only users exposed 7+ days ago enter the denominator.
+- **Safety:** events whose `metadata.account_user_id` differs from `user_id` (queued
+  offline, uploaded under another account) are ignored. Cohorts under 10 users are
+  flagged with `small_sample`; the dashboard warns that the result is exploratory.
+- **Run:** `python -m sidequests_analytics.pipeline --job bq14` stores `BQ14` in
+  `analytics.bq_results`.
