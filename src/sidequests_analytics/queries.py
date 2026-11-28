@@ -29,6 +29,11 @@ quest. It relies on the Kotlin events `bq1_resume_after_background` and
 `module_failure` (metadata: bq='BQ1', module, fatal, after_long_resume, online,
 app_version, resume_at_millis, occurred_at_millis). Events are queued offline on
 the phone, so the event time comes from `occurred_at_millis` when present.
+BQ12 (Type 4) compares sponsored and non-sponsored quests with BQ9's two-stage
+funnel, segmented by the sponsor's business category and the user's declared
+interests. Sponsorship comes from `public.quests` (`is_sponsored`,
+`sponsor_business_category`, Backend migration 010) through `quest_id`, so no
+event field is needed and both clients' history counts.
 """
 
 # BQ3 v2 reads complete journeys; aggregation and outcome censoring live in bq3.py.
@@ -839,3 +844,509 @@ from pathlib import Path as _Path
 BQ8_EXPERIENCED_COHORT_SQL = (
     _Path(__file__).resolve().parent / "sql" / "bq8_experienced.sql"
 ).read_text(encoding="utf-8")
+
+
+# BQ12 (Type 4): sponsored vs non-sponsored quest performance.
+# Both BQ12 queries share these facts; __WINDOW_START__ is each query's window.
+# Bind parameters: :min_impressions and :min_attempts (sample thresholds), plus
+# :window_days (BQ12) or :trend_weeks (BQ12_WEEKLY).
+#
+# A fact is a unique recommendation impression (as in BQ9: one per
+# user/session/quest, accepted when a recommendation_accepted of the same
+# user/session/quest follows within 24 hours) or an accepted attempt from
+# user_quests (skips excluded, whatever the attempt came from).
+# `classified` repeats each fact once per interest the user declared, so every
+# count uses distinct fact_id and segments without interest never double count.
+_BQ12_FACTS_CTES = """
+params as (
+    select
+        __WINDOW_START__ as window_start,
+        greatest(cast(:min_impressions as integer), 1) as min_impressions,
+        greatest(cast(:min_attempts as integer), 1) as min_attempts
+),
+quest_dim as (
+    -- From the catalogue, like BQ9's category. Campaigns end with
+    -- is_active = false, so inactive quests still classify their history.
+    select
+        q.id as quest_id,
+        q.category as quest_category,
+        q.tags,
+        q.is_active,
+        case when q.is_sponsored then 'sponsored' else 'non_sponsored' end as sponsor_type,
+        case
+            when not q.is_sponsored then 'none'
+            else coalesce(nullif(btrim(q.sponsor_business_category), ''), 'unspecified')
+        end as business_category
+    from public.quests q
+),
+declared_interests as (
+    -- Kotlin saves 'Outdoors' and Flutter 'outdoors': the same interest, once
+    select distinct
+        up.user_id,
+        lower(btrim(i.value)) as interest
+    from public.user_preferences up
+    cross join lateral unnest(up.interests) as i(value)
+    where nullif(btrim(i.value), '') is not null
+),
+shown as (
+    -- one impression per user/session/quest: list reloads must not inflate it
+    select
+        ae.user_id,
+        ae.session_id,
+        ae.quest_id,
+        min(ae.occurred_at) as first_shown_at
+    from public.analytics_events ae
+    cross join params p
+    where ae.event_type = 'recommendation_shown'
+      and ae.quest_id is not null
+      and ae.occurred_at >= p.window_start
+    group by ae.user_id, ae.session_id, ae.quest_id
+),
+facts as (
+    select
+        'impression|' || s.user_id::text || '|' || coalesce(s.session_id::text, '-') || '|' || s.quest_id as fact_id,
+        'impression' as kind,
+        s.user_id,
+        s.quest_id,
+        s.first_shown_at as fact_at,
+        exists (
+            select 1
+            from public.analytics_events a
+            where a.event_type = 'recommendation_accepted'
+              and a.user_id = s.user_id
+              and a.session_id is not distinct from s.session_id
+              and a.quest_id = s.quest_id
+              and a.occurred_at >= s.first_shown_at
+              and a.occurred_at < s.first_shown_at + interval '1 day'
+        ) as accepted,
+        null::text as status
+    from shown s
+
+    union all
+
+    select
+        'attempt|' || uq.id::text,
+        'attempt',
+        uq.user_id,
+        uq.quest_id,
+        uq.accepted_at,
+        null::boolean,
+        uq.status
+    from public.user_quests uq
+    cross join params p
+    where uq.accepted_at >= p.window_start
+      and uq.status <> 'skipped'
+),
+classified as (
+    -- interest_match uses recommend_quests' rule: an interest equal to the
+    -- quest category or to one of its tags, ignoring case
+    select
+        f.fact_id,
+        f.kind,
+        f.user_id,
+        f.fact_at,
+        f.accepted,
+        f.status,
+        qd.sponsor_type,
+        qd.business_category,
+        qd.quest_category,
+        coalesce(di.interest, 'none_declared') as interest,
+        case
+            when not exists (
+                select 1 from declared_interests d where d.user_id = f.user_id
+            ) then 'none_declared'
+            when exists (
+                select 1
+                from declared_interests d
+                where d.user_id = f.user_id
+                  and (
+                      d.interest = lower(qd.quest_category)
+                      or exists (
+                          select 1 from unnest(qd.tags) as t(tag) where lower(t.tag) = d.interest
+                      )
+                  )
+            ) then 'matched'
+            else 'not_matched'
+        end as interest_match
+    from facts f
+    join quest_dim qd on qd.quest_id = f.quest_id
+    left join declared_interests di on di.user_id = f.user_id
+)
+"""
+
+# Counts shared by every BQ12 aggregation (distinct fact_id: see above).
+_BQ12_COUNTS = """
+        count(distinct fact_id) filter (where kind = 'impression') as impressions,
+        count(distinct fact_id) filter (where kind = 'impression' and accepted) as accepted_impressions,
+        count(distinct user_id) filter (where kind = 'impression') as exposed_users,
+        count(distinct fact_id) filter (where kind = 'attempt') as accepted_attempts,
+        count(distinct fact_id) filter (where kind = 'attempt' and status = 'completed') as completed_attempts,
+        count(distinct fact_id) filter (where kind = 'attempt' and status = 'abandoned') as abandoned_attempts,
+        count(distinct fact_id) filter (
+            where kind = 'attempt' and status in ('accepted', 'in_progress')
+        ) as open_attempts,
+        count(distinct user_id) filter (where kind = 'attempt') as attempting_users"""
+
+# Rates of a row with the counts above. Below the sample threshold (or with no
+# exposure at all) a rate is null, never 0 %.
+_BQ12_RATES = """
+        case when c.impressions >= p.min_impressions
+            then round(100.0 * c.accepted_impressions / c.impressions, 2)
+        end as acceptance_rate_pct,
+        case when c.accepted_attempts >= p.min_attempts
+            then round(100.0 * c.completed_attempts / c.accepted_attempts, 2)
+        end as completion_rate_pct,
+        case when c.completed_attempts + c.abandoned_attempts >= p.min_attempts
+            then round(
+                100.0 * c.completed_attempts / (c.completed_attempts + c.abandoned_attempts), 2
+            )
+        end as resolved_completion_rate_pct,
+        case when c.accepted_attempts >= p.min_attempts
+            then round(100.0 * c.abandoned_attempts / c.accepted_attempts, 2)
+        end as abandonment_rate_pct,
+        c.impressions >= p.min_impressions as acceptance_sample_ok,
+        c.accepted_attempts >= p.min_attempts as completion_sample_ok,
+        p.min_impressions,
+        p.min_attempts"""
+
+BQ12_SPONSORED_PERFORMANCE_SQL = (
+    """
+with
+"""
+    + _BQ12_FACTS_CTES.replace(
+        "__WINDOW_START__", "now() - make_interval(days => cast(:window_days as integer))"
+    )
+    + """,
+aggregated as (
+    select
+        case
+            when grouping(business_category) = 0 and grouping(interest) = 0
+                then 'business_category_x_interest'
+            when grouping(business_category) = 0 then 'business_category'
+            when grouping(quest_category) = 0 then 'quest_category'
+            when grouping(interest_match) = 0 then 'interest_match'
+            when grouping(interest) = 0 then 'interest'
+            else 'overall'
+        end as segment_level,
+        sponsor_type,
+        case when grouping(business_category) = 0 then business_category else 'all' end as business_category,
+        case when grouping(quest_category) = 0 then quest_category else 'all' end as quest_category,
+        case when grouping(interest) = 0 then interest else 'all' end as interest,
+        case when grouping(interest_match) = 0 then interest_match else 'all' end as interest_match,"""
+    + _BQ12_COUNTS
+    + """
+    from classified
+    group by grouping sets (
+        (sponsor_type),
+        (sponsor_type, business_category),
+        (sponsor_type, quest_category),
+        (sponsor_type, interest_match),
+        (sponsor_type, interest),
+        (sponsor_type, business_category, interest)
+    )
+),
+skeleton as (
+    -- groups that must appear even without any exposure (rates stay null):
+    -- both sides of the overall comparison and every business category of
+    -- the active catalogue
+    select
+        'overall' as segment_level,
+        t.sponsor_type,
+        'all' as business_category,
+        'all' as quest_category,
+        'all' as interest,
+        'all' as interest_match
+    from (values ('sponsored'), ('non_sponsored')) as t(sponsor_type)
+
+    union
+
+    select distinct
+        'business_category',
+        qd.sponsor_type,
+        qd.business_category,
+        'all',
+        'all',
+        'all'
+    from quest_dim qd
+    where qd.is_active
+),
+segments as (
+    select
+        segment_level,
+        sponsor_type,
+        business_category,
+        quest_category,
+        interest,
+        interest_match,
+        coalesce(a.impressions, 0) as impressions,
+        coalesce(a.accepted_impressions, 0) as accepted_impressions,
+        coalesce(a.exposed_users, 0) as exposed_users,
+        coalesce(a.accepted_attempts, 0) as accepted_attempts,
+        coalesce(a.completed_attempts, 0) as completed_attempts,
+        coalesce(a.abandoned_attempts, 0) as abandoned_attempts,
+        coalesce(a.open_attempts, 0) as open_attempts,
+        coalesce(a.attempting_users, 0) as attempting_users
+    from skeleton
+    full outer join aggregated a
+        using (segment_level, sponsor_type, business_category, quest_category, interest, interest_match)
+),
+rated as (
+    select
+        c.*,"""
+    + _BQ12_RATES
+    + """
+    from segments c
+    cross join params p
+)
+select
+    r.segment_level,
+    r.sponsor_type,
+    r.business_category,
+    r.quest_category,
+    r.interest,
+    r.interest_match,
+    r.impressions,
+    r.accepted_impressions,
+    r.exposed_users,
+    cast(r.acceptance_rate_pct as double precision) as acceptance_rate_pct,
+    r.accepted_attempts,
+    r.completed_attempts,
+    r.abandoned_attempts,
+    r.open_attempts,
+    r.attempting_users,
+    cast(r.completion_rate_pct as double precision) as completion_rate_pct,
+    cast(r.resolved_completion_rate_pct as double precision) as resolved_completion_rate_pct,
+    cast(r.abandonment_rate_pct as double precision) as abandonment_rate_pct,
+    r.acceptance_sample_ok,
+    r.completion_sample_ok,
+    -- gap against the non-sponsored quests of the same segment (for a
+    -- business category, all non-sponsored quests, whose category is 'none')
+    cast(round(r.acceptance_rate_pct - b.acceptance_rate_pct, 2) as double precision)
+        as acceptance_rate_vs_non_sponsored_pp,
+    cast(round(r.completion_rate_pct - b.completion_rate_pct, 2) as double precision)
+        as completion_rate_vs_non_sponsored_pp,
+    cast(:window_days as integer) as window_days,
+    r.min_impressions,
+    r.min_attempts
+from rated r
+left join rated b
+    on r.sponsor_type = 'sponsored'
+   and b.sponsor_type = 'non_sponsored'
+   and b.segment_level = r.segment_level
+   and b.quest_category = r.quest_category
+   and b.interest = r.interest
+   and b.interest_match = r.interest_match
+order by
+    case r.segment_level
+        when 'overall' then 1
+        when 'business_category' then 2
+        when 'quest_category' then 3
+        when 'interest_match' then 4
+        when 'interest' then 5
+        else 6
+    end,
+    case r.sponsor_type when 'sponsored' then 1 else 2 end,
+    r.business_category,
+    r.quest_category,
+    r.interest,
+    r.interest_match;
+"""
+)
+
+# BQ12 weekly trend: sponsored vs non-sponsored per ISO week (Monday), the
+# current week included. Impressions count in the week they were first shown and
+# attempts in the week they were accepted, so recent weeks still have open
+# attempts: read their completion rate as provisional.
+BQ12_WEEKLY_TREND_SQL = (
+    """
+with
+"""
+    + _BQ12_FACTS_CTES.replace(
+        "__WINDOW_START__",
+        "date_trunc('week', now()) - make_interval(weeks => greatest(cast(:trend_weeks as integer), 1) - 1)",
+    )
+    + """,
+weeks as (
+    select generate_series(
+        date_trunc('week', p.window_start),
+        date_trunc('week', now()),
+        interval '1 week'
+    )::date as week_start
+    from params p
+),
+skeleton as (
+    -- every week and both groups, so a week without exposure stays null
+    select w.week_start, t.sponsor_type
+    from weeks w
+    cross join (values ('sponsored'), ('non_sponsored')) as t(sponsor_type)
+),
+weekly as (
+    select
+        date_trunc('week', fact_at)::date as week_start,
+        sponsor_type,"""
+    + _BQ12_COUNTS
+    + """
+    from classified
+    group by 1, 2
+),
+segments as (
+    select
+        s.week_start,
+        s.sponsor_type,
+        coalesce(w.impressions, 0) as impressions,
+        coalesce(w.accepted_impressions, 0) as accepted_impressions,
+        coalesce(w.exposed_users, 0) as exposed_users,
+        coalesce(w.accepted_attempts, 0) as accepted_attempts,
+        coalesce(w.completed_attempts, 0) as completed_attempts,
+        coalesce(w.abandoned_attempts, 0) as abandoned_attempts,
+        coalesce(w.open_attempts, 0) as open_attempts,
+        coalesce(w.attempting_users, 0) as attempting_users
+    from skeleton s
+    left join weekly w using (week_start, sponsor_type)
+),
+rated as (
+    select
+        c.*,"""
+    + _BQ12_RATES
+    + """
+    from segments c
+    cross join params p
+)
+select
+    r.week_start,
+    r.sponsor_type,
+    r.impressions,
+    r.accepted_impressions,
+    r.exposed_users,
+    cast(r.acceptance_rate_pct as double precision) as acceptance_rate_pct,
+    r.accepted_attempts,
+    r.completed_attempts,
+    r.abandoned_attempts,
+    r.open_attempts,
+    r.attempting_users,
+    cast(r.completion_rate_pct as double precision) as completion_rate_pct,
+    cast(r.resolved_completion_rate_pct as double precision) as resolved_completion_rate_pct,
+    cast(r.abandonment_rate_pct as double precision) as abandonment_rate_pct,
+    r.acceptance_sample_ok,
+    r.completion_sample_ok,
+    greatest(cast(:trend_weeks as integer), 1) as trend_weeks,
+    r.min_impressions,
+    r.min_attempts
+from rated r
+order by r.week_start, case r.sponsor_type when 'sponsored' then 1 else 2 end;
+"""
+)
+
+BQ2_GROUP_CHALLENGES_SQL = (_Path(__file__).resolve().parent / "sql" / "bq2_group_challenges.sql").read_text(encoding="utf-8")
+
+# Sprint 4 BQ14 (Carlos, Kotlin, Type 5): social comfort personalization.
+# For users with low willingness to join socially demanding activities (comfort low or
+# medium), does adapting Smart Picks to their social exposure level increase completion
+# and 7-day return compared with showing non-personalized social challenges?
+BQ14_SOCIAL_COMFORT_SQL = """
+with bq14_events as (
+    select
+        user_id,
+        lower(coalesce(metadata->>'comfort', 'high')) as comfort,
+        coalesce(metadata->>'arm', 'unknown') as arm,
+        coalesce((metadata->>'adaptation_active')::boolean, false) as adaptation_active,
+        coalesce(
+            to_timestamp((metadata->>'occurred_at_millis')::bigint / 1000.0),
+            occurred_at
+        ) as event_time
+    from public.analytics_events
+    where event_type in ('bq14_social_comfort_session', 'bq14_social_comfort_changed')
+      and metadata->>'bq' = 'BQ14'
+      -- events queued offline and uploaded under another signed-in account are ignored
+      and metadata->>'account_user_id' = user_id::text
+),
+recent as (
+    select * from bq14_events
+    where event_time >= now() - interval '30 days'
+),
+exposed as (
+    -- BQ14 population: users whose comfort was low or medium at some point in the window
+    select user_id, min(event_time) as first_low_at
+    from recent
+    where comfort in ('low', 'medium')
+    group by user_id
+),
+latest as (
+    select distinct on (user_id) user_id, arm, adaptation_active
+    from recent
+    order by user_id, event_time desc
+),
+attempts as (
+    -- BQ9 definition: one user_quests row = one attempt, skips excluded
+    select
+        e.user_id,
+        count(*) as accepted_attempts,
+        count(*) filter (where uq.status = 'completed') as completed_attempts
+    from exposed e
+    join public.user_quests uq
+      on uq.user_id = e.user_id
+     and uq.accepted_at >= e.first_low_at
+     and uq.status <> 'skipped'
+    group by e.user_id
+),
+returns as (
+    -- return = any app activity on a later calendar day within 7 days of the first exposure;
+    -- only users exposed 7+ days ago have a complete window
+    select
+        e.user_id,
+        e.first_low_at <= now() - interval '7 days' as return_eligible,
+        exists (
+            select 1
+            from public.analytics_events a
+            where a.user_id = e.user_id
+              and a.occurred_at::date > e.first_low_at::date
+              and a.occurred_at < e.first_low_at + interval '7 days'
+        ) as returned_7d
+    from exposed e
+),
+per_user as (
+    select
+        e.user_id,
+        l.arm,
+        l.adaptation_active,
+        coalesce(a.accepted_attempts, 0) as accepted_attempts,
+        coalesce(a.completed_attempts, 0) as completed_attempts,
+        r.return_eligible,
+        r.returned_7d
+    from exposed e
+    join latest l using (user_id)
+    join returns r using (user_id)
+    left join attempts a using (user_id)
+),
+grouped as (
+    -- as_treated: adaptation active in the latest event (what the user actually saw)
+    select 'as_treated' as comparison,
+           case when adaptation_active then 'adapted' else 'not_adapted' end as cohort,
+           accepted_attempts, completed_attempts, return_eligible, returned_7d
+    from per_user
+    union all
+    -- intent_to_treat: hash-assigned arm, which only sets the default of the switch
+    select 'intent_to_treat' as comparison,
+           case when arm = 'adapt_default' then 'adapted' else 'not_adapted' end as cohort,
+           accepted_attempts, completed_attempts, return_eligible, returned_7d
+    from per_user
+)
+select
+    comparison,
+    cohort,
+    count(*) as users,
+    sum(accepted_attempts) as accepted_attempts,
+    sum(completed_attempts) as completed_attempts,
+    round(100.0 * sum(completed_attempts) / nullif(sum(accepted_attempts), 0), 2) as completion_rate_pct,
+    count(*) filter (where return_eligible) as return_eligible_users,
+    count(*) filter (where return_eligible and returned_7d) as returned_users,
+    round(
+        100.0 * count(*) filter (where return_eligible and returned_7d)
+        / nullif(count(*) filter (where return_eligible), 0),
+        2
+    ) as return_rate_7d_pct,
+    count(*) < 10 as small_sample
+from grouped
+group by comparison, cohort
+order by comparison, cohort;
+"""

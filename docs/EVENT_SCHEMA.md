@@ -138,6 +138,34 @@ linked to its impression, it must carry the same `session_id` and `quest_id`
 as the `recommendation_shown` event. Completion and abandonment come from
 `public.user_quests`.
 
+## BQ12 sponsored quest performance
+
+BQ12 needs no new event or metadata field. It reuses BQ9's sources:
+`recommendation_shown` / `recommendation_accepted` (linked by `user_id` +
+`session_id` + `quest_id`, accepted within 24 hours of the first impression) and
+`public.user_quests` for completion. Both clients already queue these events offline
+with their original `occurred_at` (Kotlin's recommendation outbox, Flutter's
+`AnalyticsTracker`), which the 24-hour link and the 30-day window depend on.
+
+Sponsorship is read from the catalogue through `quest_id`, never from the event:
+
+- `quests.is_sponsored` (boolean) and `quests.sponsor_name`.
+- `quests.sponsor_business_category` (Sidequests-Backend migration 010), the
+  sponsor's business type. One of `fitness_and_recreation`, `food_and_beverage`,
+  `arts_and_culture`, `education_and_books`, `health_and_wellness`, `retail`,
+  `events_and_entertainment`, `community_and_nonprofit` (CHECK-enforced), or null.
+  Null on a sponsored quest is reported as `unspecified`; non-sponsored quests are
+  always `none`. Kotlin's `QuestDto.sponsorBusinessCategory` and Flutter's
+  `Quest.sponsorBusinessCategory` read this column.
+
+Declared interests come from `user_preferences.interests` (`text[]`). The two
+clients offer the same seven values with different casing (Kotlin `Outdoors`,
+Flutter `outdoors`); BQ12 lowercases and trims them, so they are one interest.
+
+UI rule shared by both clients: a quest with `is_sponsored = true` is always shown
+labelled as sponsored (Kotlin `SPONSORED` pill; Flutter `Patrocinada` badge on
+cards and "Patrocinada por <sponsor_name>" in the detail view).
+
 ## BQ10 location mode events
 
 BQ10 uses two selection events:
@@ -256,3 +284,47 @@ or a non-fatal failure reported by a module. Metadata:
 - `online` (boolean) — validated internet at the moment of the failure, so
   expected offline failures can be separated from real bugs
 - `app_version` (text), `occurred_at_millis` (integer)
+
+## BQ11 weekend commercial-block event (Kotlin and Flutter, Sprint 4)
+
+`bq11_commercial_block_completed` — a physical quest was completed on a Bogotá
+weekend after more than 20 observed minutes in one mapped commercial block. Both
+clients send the same contract: Kotlin from the Android app, Flutter from
+`QuestViewModel` with `platform` = `flutter`, reading the location every 15
+seconds. The `user_id` and `quest_id` columns must match the attempt.
+Metadata:
+
+- `schema_version` = `1`
+- `platform`: `kotlin` or `flutter`; any other value is ignored by BQ11
+- `attempt_id` (uuid string) — `user_quests.id`; an attempt counts once however
+  many events report it
+- `event_id` (uuid string)
+- `block_id`: `usaquen-cra6a-c119` or `paloquemao-market`
+- `weekend_start` (`YYYY-MM-DD`, the Saturday of the Bogotá weekend)
+- `observed_ms` (integer) — observed time in the block
+
+No coordinates are sent in the event, from either client. Measurement rules are in
+[BQ11_WEEKEND_BLOCKS.md](BQ11_WEEKEND_BLOCKS.md).
+
+## BQ14 social comfort events (Kotlin, Sprint 4)
+
+Sent through the same durable SQLite + WorkManager queue as BQ1, so events recorded in
+airplane mode are uploaded after reconnecting. Stored in `public.analytics_events`.
+
+`bq14_social_comfort_session` — once per sign-in, after the account's saved settings are
+restored.
+
+`bq14_social_comfort_changed` — the user changed the comfort level or the
+"Adapt my Smart Picks" switch. Adds `change` = `level` or `adaptation`.
+
+Metadata of both:
+
+- `bq` = `BQ14`
+- `arm`: `adapt_default` or `control` (stable 32-bit FNV-1a hash of the user id)
+- `comfort`: `low`, `medium` or `high`
+- `low_willingness` (boolean) — comfort is `low` or `medium`
+- `adaptation_active` (boolean) — quests above the level are hidden from Smart Picks
+- `adaptation_source`: `user` (explicit choice) or `default` (set by the arm)
+- `online` (boolean), `app_version` (text)
+- `account_user_id` (text) — must equal `user_id`; rows that differ are ignored
+- `occurred_at_millis` (integer, device time)

@@ -1,10 +1,103 @@
 import json
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 from sqlalchemy import text
 
+from .bq12 import bq12_compare, bq12_headline, bq12_level
 from .db import get_engine
+
+
+def _pct(value):
+    return "—" if value is None else f"{value:.1f}%"
+
+
+def _gap(value):
+    return None if value is None else f"{value:+.1f} pp vs non-sponsored"
+
+
+def render_bq12(data):
+    st.caption(
+        "BQ12 · Acceptance and completion of sponsored vs non-sponsored quests, "
+        "by sponsor business category and declared interest (last 30 days)."
+    )
+    if not data or "segment_level" not in data[0]:
+        st.info("No recommendation or quest activity has been recorded yet.")
+        return
+
+    headline = bq12_headline(data)
+    sponsored, non_sponsored = headline["sponsored"], headline["non_sponsored"]
+    columns = st.columns(4)
+    columns[0].metric("Sponsored acceptance", _pct(sponsored.get("acceptance_rate_pct")),
+                      _gap(headline["acceptance_gap_pp"]))
+    columns[1].metric("Non-sponsored acceptance", _pct(non_sponsored.get("acceptance_rate_pct")))
+    columns[2].metric("Sponsored completion", _pct(sponsored.get("completion_rate_pct")),
+                      _gap(headline["completion_gap_pp"]))
+    columns[3].metric("Non-sponsored completion", _pct(non_sponsored.get("completion_rate_pct")))
+    if not headline["comparable"]:
+        st.info(
+            "Not enough sample to compare sponsored and non-sponsored quests yet: "
+            f"a rate needs {data[0].get('min_impressions')} impressions or "
+            f"{data[0].get('min_attempts')} accepted attempts. Counts are in the table."
+        )
+
+    by_business = bq12_level(data, "business_category")
+    if not by_business.empty:
+        st.write("By sponsor business category (`none` = non-sponsored baseline)")
+        st.bar_chart(
+            by_business.set_index("business_category")[["acceptance_rate_pct", "completion_rate_pct"]],
+            stack=False,
+        )
+
+    left, right = st.columns(2)
+    acceptance_by_interest = bq12_compare(data, "interest", "interest", "acceptance_rate_pct")
+    completion_by_interest = bq12_compare(data, "interest", "interest", "completion_rate_pct")
+    if not acceptance_by_interest.empty:
+        with left:
+            st.write("Acceptance (%) by declared interest")
+            st.bar_chart(acceptance_by_interest, stack=False)
+        with right:
+            st.write("Completion (%) by declared interest")
+            st.bar_chart(completion_by_interest, stack=False)
+
+    grid = bq12_level(data, "business_category_x_interest")
+    if not grid.empty:
+        st.write("Acceptance (%) by business category × interest (empty cell = no rate)")
+        heatmap = alt.Chart(grid).mark_rect().encode(
+            x=alt.X("interest:N", title="Declared interest"),
+            y=alt.Y("business_category:N", title="Business category"),
+            color=alt.Color("acceptance_rate_pct:Q", title="Acceptance (%)"),
+            tooltip=["business_category", "interest", "impressions", "acceptance_rate_pct",
+                     "accepted_attempts", "completion_rate_pct"],
+        )
+        st.altair_chart(heatmap, use_container_width=True)
+
+    match = bq12_level(data, "interest_match")
+    if not match.empty:
+        st.write("Does the quest match a declared interest?")
+        st.table(match[["sponsor_type", "interest_match", "impressions", "acceptance_rate_pct",
+                        "accepted_attempts", "completion_rate_pct"]])
+
+    st.caption(
+        "Acceptance = accepted unique recommendation impressions (one per user, session and "
+        "quest) / impressions. Completion = completed / accepted attempts, skips excluded. "
+        "Rates are empty below the sample threshold or without exposure. A user with several "
+        "interests counts in each of them, so interest rows don't add up to the total. "
+        "Observational evidence, not a causal effect of sponsorship."
+    )
+
+
+def render_bq12_weekly(frame):
+    st.caption("BQ12 · Weekly trend, sponsored vs non-sponsored. Recent weeks still have open attempts.")
+    if frame.empty or "week_start" not in frame.columns:
+        st.info("No weekly BQ12 data yet.")
+        return
+    trend = frame.copy()
+    trend["acceptance_rate_pct"] = pd.to_numeric(trend["acceptance_rate_pct"], errors="coerce")
+    wide = trend.pivot(index="week_start", columns="sponsor_type", values="acceptance_rate_pct")
+    st.write("Acceptance (%) per week")
+    st.line_chart(wide)
 
 
 st.set_page_config(page_title="Sidequests Analytics", layout="wide")
@@ -86,6 +179,37 @@ else:
 st.divider()
 st.markdown("### Previously stored Business Question results")
 
+with st.expander("Sprint 4 · BQ11 — Weekend commercial blocks"):
+    from .bq11 import compute_bq11
+    from .bq11_dashboard import render_bq11
+
+    st.caption("Run the current aggregate without saving a new dashboard result.")
+    if st.button("Load / refresh BQ11", key="refresh_bq11"):
+        try:
+            st.session_state["bq11_live"] = compute_bq11(engine)
+        except Exception:
+            st.session_state.pop("bq11_live", None)
+            st.error("BQ11 could not be loaded. Check the database connection and access.")
+    if "bq11_live" in st.session_state:
+        render_bq11(st.session_state["bq11_live"])
+
+with st.expander("Sprint 4 · BQ2 — Group Challenge Module"):
+    st.caption("Live, read-only comparison of server-received requests in the last 30 days.")
+    if st.button("Load / refresh BQ2", key="refresh_bq2"):
+        try:
+            from .pipeline import bq2_schema_ready, compute_bq2
+            if bq2_schema_ready(engine):
+                st.session_state["bq2_live"] = compute_bq2(engine)
+            else:
+                st.session_state.pop("bq2_live", None)
+                st.warning("The shared group challenge backend has not been deployed.")
+        except Exception:
+            st.session_state.pop("bq2_live", None)
+            st.error("BQ2 could not be loaded. Check database access and migration status.")
+    if "bq2_live" in st.session_state:
+        from .bq2_dashboard import render_bq2
+        render_bq2(pd.DataFrame(st.session_state["bq2_live"]))
+
 rows = pd.read_sql(
     text(
         """
@@ -111,6 +235,10 @@ else:
             payload = json.loads(payload)
         data = payload.get("rows", [])
         frame = pd.DataFrame(data)
+        if row["bq_key"] == "BQ2":
+            from .bq2_dashboard import render_bq2
+            render_bq2(frame)
+
         if row["bq_key"] == "BQ3" and data and data[0].get("schema_version") == 2:
             bq3_frame = frame.sort_values("step_order").set_index("step_name")
             st.caption(f"Platform: {data[0]['platform']} · Initial instrumented setups: {data[0]['journeys_started']} · Observation horizon: {data[0]['observation_hours']:g} hours")
@@ -218,5 +346,19 @@ else:
                 )
             else:
                 st.warning("BQ9 is missing the fields needed for the completion chart.")
+
+        if row["bq_key"] == "BQ11":
+            render_bq11(data)
+            continue
+
+        if row["bq_key"] == "BQ12":
+            render_bq12(data)
+
+        if row["bq_key"] == "BQ12_WEEKLY":
+            render_bq12_weekly(frame)
+
+        if row["bq_key"] == "BQ14":
+            from .bq14_dashboard import render_bq14
+            render_bq14(frame)
 
         st.dataframe(frame, use_container_width=True)

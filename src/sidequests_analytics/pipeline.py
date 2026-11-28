@@ -7,8 +7,10 @@ from sqlalchemy import text
 
 from .db import get_engine
 from .bq3 import summarize_bq3
+from .bq11 import compute_bq11
 from .queries import (
     BQ1_MODULE_FAILURES_AFTER_RESUME_SQL,
+    BQ2_GROUP_CHALLENGES_SQL,
     BQ3_ONBOARDING_DROPOFF_SQL,
     BQ4_INSTANT_PLAN_SQL,
     BQ5_PERSONALIZED_RECOMMENDATION_SQL,
@@ -18,8 +20,17 @@ from .queries import (
     BQ8_EXPERIENCED_COHORT_SQL,
     BQ9_CATEGORY_PERFORMANCE_SQL,
     BQ10_LOCATION_INDEPENDENT_USAGE_SQL,
+    BQ12_SPONSORED_PERFORMANCE_SQL,
+    BQ12_WEEKLY_TREND_SQL,
+    BQ14_SOCIAL_COMFORT_SQL,
     USER_FEATURES_SQL,
 )
+
+# BQ12 defaults: a rate needs at least this many impressions / accepted attempts.
+BQ12_WINDOW_DAYS = 30
+BQ12_MIN_IMPRESSIONS = 10
+BQ12_MIN_ATTEMPTS = 5
+BQ12_TREND_WEEKS = 12
 
 
 def _records(df: pd.DataFrame) -> list[dict]:
@@ -27,8 +38,30 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return clean.to_dict(orient="records")
 
 
+def _json_records(df: pd.DataFrame) -> list[dict]:
+    # A float column keeps NaN through `where`; NaN isn't valid JSON for jsonb.
+    return df.astype(object).where(pd.notnull(df), None).to_dict(orient="records")
+
+
 def compute_bq1(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ1_MODULE_FAILURES_AFTER_RESUME_SQL), engine))
+
+
+def compute_bq14(engine) -> list[dict]:
+    frame = pd.read_sql(text(BQ14_SOCIAL_COMFORT_SQL), engine)
+    return _json_records(frame)
+
+
+def bq2_schema_ready(engine) -> bool:
+    with engine.connect() as conn:
+        return bool(conn.execute(text(
+            "select to_regclass('sidequests_group_private.operations') is not null"
+        )).scalar())
+
+
+def compute_bq2(engine) -> list[dict]:
+    frame = pd.read_sql(text(BQ2_GROUP_CHALLENGES_SQL), engine)
+    return frame.astype(object).where(pd.notnull(frame), None).to_dict(orient="records")
 
 
 def compute_bq3(engine, observation_hours=24.0, as_of=None) -> list[dict]:
@@ -69,6 +102,44 @@ def compute_bq6_base(engine) -> list[dict]:
 
 def compute_bq10(engine) -> list[dict]:
     return _records(pd.read_sql(text(BQ10_LOCATION_INDEPENDENT_USAGE_SQL), engine))
+
+
+def compute_bq12(
+    engine,
+    window_days: int = BQ12_WINDOW_DAYS,
+    min_impressions: int = BQ12_MIN_IMPRESSIONS,
+    min_attempts: int = BQ12_MIN_ATTEMPTS,
+) -> list[dict]:
+    """Sponsored vs non-sponsored acceptance and completion, one row per segment."""
+    frame = pd.read_sql(
+        text(BQ12_SPONSORED_PERFORMANCE_SQL),
+        engine,
+        params={
+            "window_days": window_days,
+            "min_impressions": min_impressions,
+            "min_attempts": min_attempts,
+        },
+    )
+    return _json_records(frame)
+
+
+def compute_bq12_weekly(
+    engine,
+    trend_weeks: int = BQ12_TREND_WEEKS,
+    min_impressions: int = BQ12_MIN_IMPRESSIONS,
+    min_attempts: int = BQ12_MIN_ATTEMPTS,
+) -> list[dict]:
+    """BQ12 per week and sponsor type, for the trend chart."""
+    frame = pd.read_sql(
+        text(BQ12_WEEKLY_TREND_SQL),
+        engine,
+        params={
+            "trend_weeks": trend_weeks,
+            "min_impressions": min_impressions,
+            "min_attempts": min_attempts,
+        },
+    )
+    return _json_records(frame)
 
 
 def refresh_user_features(engine) -> int:
@@ -134,9 +205,17 @@ def run() -> None:
                         help="BQ3 inactivity and first-acceptance horizon (default: 24 hours)")
     parser.add_argument(
         "--job",
-        choices=("all", "bq1", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "features"),
+        choices=("all", "bq1", "bq2", "bq3", "bq4", "bq5", "bq6", "bq7", "bq8", "bq9", "bq10", "bq11", "bq12", "bq14", "features"),
         default="all",
     )
+    parser.add_argument("--bq12-window-days", type=int, default=BQ12_WINDOW_DAYS,
+                        help="BQ12 window (default: 30 days)")
+    parser.add_argument("--bq12-min-impressions", type=int, default=BQ12_MIN_IMPRESSIONS,
+                        help="BQ12: fewer impressions than this leave the acceptance rate null (default: 10)")
+    parser.add_argument("--bq12-min-attempts", type=int, default=BQ12_MIN_ATTEMPTS,
+                        help="BQ12: fewer accepted attempts than this leave the completion rate null (default: 5)")
+    parser.add_argument("--bq12-trend-weeks", type=int, default=BQ12_TREND_WEEKS,
+                        help="BQ12_WEEKLY: weeks in the trend, current week included (default: 12)")
     args = parser.parse_args()
 
     engine = get_engine()
@@ -149,6 +228,16 @@ def run() -> None:
         bq1 = compute_bq1(engine)
         store_bq_result(engine, "BQ1", bq1)
         print(f"stored BQ1 rows: {len(bq1)}")
+
+    if args.job in ("all", "bq2"):
+        if bq2_schema_ready(engine):
+            bq2 = compute_bq2(engine)
+            store_bq_result(engine, "BQ2", bq2)
+            print(f"stored BQ2 rows: {len(bq2)}")
+        elif args.job == "bq2":
+            raise RuntimeError("BQ2 backend migration has not been applied.")
+        else:
+            print("skipped BQ2: backend migration not installed")
 
     if args.job in ("all", "bq3"):
         bq3 = compute_bq3(engine, observation_hours=args.bq3_observation_hours)
@@ -193,6 +282,34 @@ def run() -> None:
         bq10 = compute_bq10(engine)
         store_bq_result(engine, "BQ10", bq10)
         print(f"stored BQ10 rows: {len(bq10)}")
+
+    if args.job in ("all", "bq11"):
+        bq11 = compute_bq11(engine)
+        store_bq_result(engine, "BQ11", bq11)
+        print(f"stored BQ11 rows: {len(bq11)}")
+
+    if args.job in ("all", "bq12"):
+        bq12 = compute_bq12(
+            engine,
+            window_days=args.bq12_window_days,
+            min_impressions=args.bq12_min_impressions,
+            min_attempts=args.bq12_min_attempts,
+        )
+        store_bq_result(engine, "BQ12", bq12)
+        print(f"stored BQ12 rows: {len(bq12)}")
+        weekly = compute_bq12_weekly(
+            engine,
+            trend_weeks=args.bq12_trend_weeks,
+            min_impressions=args.bq12_min_impressions,
+            min_attempts=args.bq12_min_attempts,
+        )
+        store_bq_result(engine, "BQ12_WEEKLY", weekly)
+        print(f"stored BQ12_WEEKLY rows: {len(weekly)}")
+
+    if args.job in ("all", "bq14"):
+        bq14 = compute_bq14(engine)
+        store_bq_result(engine, "BQ14", bq14)
+        print(f"stored BQ14 rows: {len(bq14)}")
 
 
 if __name__ == "__main__":
