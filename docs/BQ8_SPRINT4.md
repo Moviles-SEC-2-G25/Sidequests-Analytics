@@ -1,6 +1,6 @@
 # BQ8 Sprint 4 — Experienced-user recommendation diversity
 
-**Selected by Sebastián (Kotlin subgroup).** The client-side experiment uses the
+**Kotlin subgroup:** originally selected and implemented by Sebastián; reassigned to Julián for Sprint 4 follow-up. The client-side experiment uses the
 shared `recommend_quests` RPC: server-assigned `control` and `diverse` arms,
 not the optional local "Something Different" browsing view.
 
@@ -18,7 +18,7 @@ a large `unassigned` legacy cohort. This Sprint 4 companion computes
   We chose *two* as a reproducible interpretation of "multiple."
 - **Arms:** `control` vs `diverse`, copied from the server RPC. The assignment
   is account-stable, but it is not evidence of a randomized controlled trial.
-- **Exposures:** deduplicate on user/session/batch/quest. Displayed lists with
+- **Exposures:** require a non-null session ID and exclude future-dated events; deduplicate on user/session/batch/quest. Lists are grouped within each session. Displayed lists with
   only one visible item do not enter the diversity average. Lists for the same
   user can be numerous; count distinct users separately.
 - **Acceptance opportunity:** one exposed user/session/quest, matched to
@@ -26,7 +26,7 @@ a large `unassigned` legacy cohort. This Sprint 4 companion computes
   the impression and within the following 24 hours. Only opportunities that
   have completed 24 hours of observation enter acceptance-rate denominators.
   A duplicate replay of one impression is not an additional opportunity.
-- **Return proxy:** at least one **different instrumented session** from
+- **Return proxy:** at least one **different instrumented session with a non-null ID** from
   30 minutes to 24 hours after the user's first eligible exposure. Only users
   whose first eligible exposure is at least 24 hours old enter the rate.
   **This does not measure all app opens or verified retention.**
@@ -138,7 +138,7 @@ For a one-off runner without storing credentials, the existing
 ## Read-only live check performed on 2026-11-21
 
 The query in the dedicated SQL file was executed without writing to Supabase.
-At that point the historical 30-day window yielded:
+Before the session-validation corrections, the historical 30-day window yielded (rerun required for current results):
 
 | Metric | Control | Diverse |
 | --- | ---: | ---: |
