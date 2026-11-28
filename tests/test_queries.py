@@ -348,3 +348,11 @@ def test_bq12_job_is_wired_into_the_pipeline():
     assert '"bq12"' in src
     assert 'store_bq_result(engine, "BQ12", bq12)' in src
     assert 'store_bq_result(engine, "BQ12_WEEKLY", weekly)' in src
+
+
+def test_bq8_sprint4_requires_identifiable_sessions_and_session_scoped_batches():
+    sql = BQ8_EXPERIENCED_COHORT_SQL.lower()
+    assert "ae.session_id is not null" in sql
+    assert "r.session_id is not null" in sql
+    assert "ae.occurred_at <= now()" in sql
+    assert "group by variant, user_id, session_id, batch_id" in sql

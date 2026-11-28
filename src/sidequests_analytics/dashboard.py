@@ -104,7 +104,80 @@ st.set_page_config(page_title="Sidequests Analytics", layout="wide")
 st.title("Sidequests · BQ Dashboard")
 st.caption("Shared Sprint 2 and Sprint 3 analytics results from the Sidequests database")
 
-engine = get_engine()
+try:
+    engine = get_engine()
+except RuntimeError:
+    st.error(
+        "No database connection configured. Run scripts/configure_bq8_dashboard.py "
+        "once to create the local Streamlit secrets file, or set DATABASE_URL."
+    )
+    st.stop()
+
+# Sprint 4 BQ8: a reproducible live read-only view. It does not depend on
+# the BQ8_EXPERIENCED result having been published in analytics.bq_results.
+st.markdown("### Sprint 4 · BQ8 — Recommendation Diversity")
+st.caption(
+    "Live PostgreSQL analysis · Users with at least two completions before "
+    "exposure · Server experiment: control vs diverse"
+)
+refresh_bq8 = st.button("Refresh live BQ8", key="refresh_live_bq8")
+if refresh_bq8 or "bq8_live_rows" not in st.session_state:
+    try:
+        from .pipeline import compute_bq8_experienced
+        with st.spinner("Reading BQ8 cohorts from Supabase..."):
+            st.session_state["bq8_live_rows"] = compute_bq8_experienced(engine)
+            st.session_state["bq8_live_at"] = pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d %H:%M UTC")
+    except Exception:
+        # Do not surface DB connection strings or driver exceptions to viewers.
+        st.error("The live BQ8 query could not be completed. Verify database access and schema.")
+        st.session_state.pop("bq8_live_rows", None)
+
+live_rows = st.session_state.get("bq8_live_rows", [])
+if live_rows:
+    live_frame = pd.DataFrame(live_rows)
+    required_columns = {
+        "variant", "eligible_users", "comparable_batches",
+        "avg_distinct_categories_per_list", "acceptance_rate_pct",
+        "return_rate_24h_pct",
+    }
+    if required_columns.issubset(live_frame.columns):
+        st.caption(
+            f"Last read: {st.session_state.get('bq8_live_at', 'unknown')} · "
+            "Read-only: no new results are stored"
+        )
+        control = live_frame.loc[live_frame["variant"] == "control"]
+        diverse = live_frame.loc[live_frame["variant"] == "diverse"]
+        left, right = st.columns(2)
+        with left:
+            st.metric("Eligible control users", int(control["eligible_users"].sum()))
+        with right:
+            st.metric("Eligible diverse users", int(diverse["eligible_users"].sum()))
+        st.write("Category diversity (mean distinct categories per comparable visible list)")
+        bars = live_frame.set_index("variant")[["avg_distinct_categories_per_list"]].copy()
+        bars["avg_distinct_categories_per_list"] = pd.to_numeric(
+            bars["avg_distinct_categories_per_list"], errors="coerce"
+        )
+        st.bar_chart(bars)
+        st.write("Acceptance and observed return (percent, by experimental arm)")
+        outcomes = live_frame.set_index("variant")[["acceptance_rate_pct", "return_rate_24h_pct"]].copy()
+        outcomes = outcomes.apply(pd.to_numeric, errors="coerce")
+        st.bar_chart(outcomes)
+        st.dataframe(live_frame, use_container_width=True)
+        st.warning(
+            "These are observed associations, not causal evidence. "
+            "Only a few experienced users are currently eligible; repeated "
+            "recommendation batches are not independent participants."
+        )
+        st.caption(
+            "Acceptance: distinct matured user/session/quest opportunities. "
+            "Return: different instrumented session 30 min–24 h after first "
+            "eligible exposure. An app opening without telemetry is not observed."
+        )
+else:
+    st.info("There are no completed read-only BQ8 query results for this session.")
+
+st.divider()
+st.markdown("### Previously stored Business Question results")
 
 with st.expander("Sprint 4 · BQ11 — Weekend commercial blocks"):
     from .bq11 import compute_bq11

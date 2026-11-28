@@ -1,6 +1,6 @@
 # BQ8 Sprint 4 — Experienced-user recommendation diversity
 
-**Selected by Sebastián (Kotlin subgroup).** The client-side experiment uses the
+**Kotlin subgroup:** originally selected and implemented by Sebastián; reassigned to Julián for Sprint 4 follow-up. The client-side experiment uses the
 shared `recommend_quests` RPC: server-assigned `control` and `diverse` arms,
 not the optional local "Something Different" browsing view.
 
@@ -18,7 +18,7 @@ a large `unassigned` legacy cohort. This Sprint 4 companion computes
   We chose *two* as a reproducible interpretation of "multiple."
 - **Arms:** `control` vs `diverse`, copied from the server RPC. The assignment
   is account-stable, but it is not evidence of a randomized controlled trial.
-- **Exposures:** deduplicate on user/session/batch/quest. Displayed lists with
+- **Exposures:** require a non-null session ID and exclude future-dated events; deduplicate on user/session/batch/quest. Lists are grouped within each session. Displayed lists with
   only one visible item do not enter the diversity average. Lists for the same
   user can be numerous; count distinct users separately.
 - **Acceptance opportunity:** one exposed user/session/quest, matched to
@@ -26,7 +26,7 @@ a large `unassigned` legacy cohort. This Sprint 4 companion computes
   the impression and within the following 24 hours. Only opportunities that
   have completed 24 hours of observation enter acceptance-rate denominators.
   A duplicate replay of one impression is not an additional opportunity.
-- **Return proxy:** at least one **different instrumented session** from
+- **Return proxy:** at least one **different instrumented session with a non-null ID** from
   30 minutes to 24 hours after the user's first eligible exposure. Only users
   whose first eligible exposure is at least 24 hours old enter the rate.
   **This does not measure all app opens or verified retention.**
@@ -103,10 +103,42 @@ These commands assume the paths above match your own Windows installation.
 Do **not** copy the URI/password into issues, Wiki, pull requests, logs, images
 or chat. A database password belongs only in the hidden local prompt.
 
+## One-time local dashboard setup (no repeated URI entry)
+
+The dashboard now reads `DATABASE_URL` from the git-ignored local
+`.streamlit/secrets.toml` if no process-level environment variable is set.
+The dashboard runs the experienced BQ8 query **read-only when opened** and
+offers **Refresh live BQ8** without inserting any rows in `bq_results`.
+The existing stored-result views are still available below.
+
+From PowerShell in a clean `Sidequests-Analytics-BQ8` checkout:
+
+```powershell
+cd C:\ANDES\Sidequests-Analytics-BQ8
+git pull --ff-only origin feature/s4-bq8-experienced-analytics
+
+# Do this just ONCE, on your own trusted PC:
+& 'C:\ANDES\Sidequests-Analytics\.venv\Scripts\python.exe' .\scripts\configure_bq8_dashboard.py
+
+# Every later demonstration: just this command:
+& 'C:\ANDES\Sidequests-Analytics\.venv\Scripts\python.exe' -m streamlit run dashboard_app.py --server.address 127.0.0.1 --server.port 8501
+```
+
+The first command asks for the placeholder URI and password separately,
+verifies the database connection and stores a **local plaintext** connection
+string. The file is intentionally excluded from Git. Do not use the
+`-Publish` switch for this dashboard: it reads live metrics directly.
+Only trusted local users should access the database connection. If you need
+an internet-facing deployment, first create a least-privileged read-only
+role and access controls; never deploy the database administrator password.
+
+For a one-off runner without storing credentials, the existing
+`run-bq8-local.ps1` remains available. The two approaches are complementary.
+
 ## Read-only live check performed on 2026-11-21
 
 The query in the dedicated SQL file was executed without writing to Supabase.
-At that point the historical 30-day window yielded:
+Before the session-validation corrections, the historical 30-day window yielded (rerun required for current results):
 
 | Metric | Control | Diverse |
 | --- | ---: | ---: |
@@ -128,12 +160,12 @@ Observed return does not prove next-day retention.
 
 - [x] SQL from the committed file executed successfully on live Supabase
       read-only and returned explicit control/diverse rows.
-- [ ] Dedicated-branch Python CI and tests pass.
-- [ ] Interactive PowerShell connection verified on the student's machine.
+- [x] Dedicated-branch Python CI and tests passed (GitHub Actions).
+- [x] Interactive PowerShell read-only connection and 93 Python tests verified on the student's Windows machine (reported in project conversation).
 - [ ] Live new Kotlin viewport events confirmed from a real Android.
 - [ ] A new result published to `analytics.bq_results` **only after approval**.
 - [ ] Dashboard output verified with those published aggregates.
 - [ ] Wiki screenshots are redacted and identify dates, versions, sample sizes.
 
-The publication and phone evidence are still pending. Do not represent this
+The publication and phone evidence are still pending. A live read-only dashboard does not require publication. Do not represent this
 document as the graded final writeup; the subgroup should review it.

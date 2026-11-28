@@ -16,13 +16,15 @@ raw_exposures as (
     where ae.event_type = 'recommendation_shown'
       and ae.metadata->>'variant' in ('control', 'diverse')
       and ae.user_id is not null
+      and ae.session_id is not null
+      and ae.occurred_at <= now()
       and ae.occurred_at >= now() - interval '30 days'
 ),
 unique_exposures as (
     select distinct on (user_id, session_id, batch_id, quest_id)
         user_id, session_id, quest_id, category, occurred_at, variant, batch_id
     from raw_exposures
-    order by user_id, session_id, batch_id, quest_id, occurred_at
+    order by user_id, session_id, batch_id, quest_id, occurred_at, variant
 ),
 experienced_exposures as (
     select e.*
@@ -38,11 +40,11 @@ experienced_exposures as (
 ),
 list_stats as (
     select
-        variant, user_id, batch_id,
+        variant, user_id, session_id, batch_id,
         count(*) as visible_items,
         count(distinct category) as unique_categories
     from experienced_exposures
-    group by variant, user_id, batch_id
+    group by variant, user_id, session_id, batch_id
 ),
 list_summary as (
     select
@@ -62,7 +64,7 @@ user_session_quest_first as (
     select distinct on (user_id, session_id, quest_id)
         user_id, session_id, quest_id, variant, occurred_at as first_shown_at
     from experienced_exposures
-    order by user_id, session_id, quest_id, occurred_at
+    order by user_id, session_id, quest_id, occurred_at, variant
 ),
 accepted_summary as (
     select
@@ -90,7 +92,7 @@ first_exposure_per_user as (
     select distinct on (user_id)
         user_id, session_id, variant, occurred_at as first_shown_at
     from experienced_exposures
-    order by user_id, occurred_at
+    order by user_id, occurred_at, session_id, variant
 ),
 return_cohort as (
     select
@@ -104,6 +106,7 @@ return_cohort as (
                   select 1
                   from public.analytics_events r
                   where r.user_id = f.user_id
+                    and r.session_id is not null
                     and r.session_id is distinct from f.session_id
                     and r.occurred_at >= f.first_shown_at + interval '30 minutes'
                     and r.occurred_at < f.first_shown_at + interval '24 hours'
